@@ -221,16 +221,15 @@ fun HomeScreen(
                 }
             }
 
-            item {
-                SectionHeader(
-                    title = "폴더",
-                    detail = if (pairs.isEmpty()) null else "${pairs.size}개",
-                    onAdd = onNewPair,
-                    addEnabled = loggedIn && !syncState.running && hasAllFilesAccess,
-                )
-            }
-
             if (pairs.isNotEmpty()) {
+                item {
+                    SectionHeader(
+                        title = "폴더",
+                        detail = "${pairs.size}개",
+                        onAdd = onNewPair,
+                        addEnabled = loggedIn && !syncState.running && hasAllFilesAccess,
+                    )
+                }
                 items(pairs, key = { it.id }) { pair ->
                     PairRow(
                         pair = pair,
