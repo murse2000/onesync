@@ -45,5 +45,34 @@ class SyncDatabase(context: Context) :
                 """.trimIndent(),
             )
         }
+        if (oldVersion < 4) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS Conflict(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pairId INTEGER NOT NULL,
+                    originalPath TEXT NOT NULL,
+                    copyPath TEXT NOT NULL,
+                    remoteCopyId TEXT,
+                    createdAt INTEGER NOT NULL,
+                    resolvedAt INTEGER
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS UploadSession(
+                    pairId INTEGER NOT NULL,
+                    path TEXT NOT NULL,
+                    uploadUrl TEXT NOT NULL,
+                    offset INTEGER NOT NULL,
+                    fileSize INTEGER NOT NULL,
+                    fileModified INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    PRIMARY KEY(pairId, path)
+                )
+                """.trimIndent(),
+            )
+        }
     }
 }

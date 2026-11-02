@@ -180,6 +180,7 @@ class GraphClient {
 
     /**
      * 4MB 초과 파일은 업로드 세션으로 나눠 올린다.
+     * [existingUrl]이 있고 파일이 그대로면 서버가 기대하는 위치부터 이어서 올린다.
      * 청크 크기는 320KiB의 배수여야 한다(10MiB 사용).
      */
     suspend fun uploadLarge(
@@ -187,21 +188,42 @@ class GraphClient {
         parentId: String,
         name: String,
         file: File,
+        existingUrl: String? = null,
+        existingOffset: Long = 0,
+        onOffset: (uploadUrl: String, offset: Long) -> Unit = { _, _ -> },
         onProgress: (Int) -> Unit = {},
     ): DriveItem = withContext(Dispatchers.IO) {
-        val encoded = URLEncoder.encode(name, "UTF-8").replace("+", "%20")
-        val session = postJson(
-            token,
-            "/me/drive/items/$parentId:/$encoded:/createUploadSession",
-            JSONObject().put(
-                "item",
-                JSONObject().put("@microsoft.graph.conflictBehavior", "replace"),
-            ),
-        )
-        val uploadUrl = session.getString("uploadUrl")
         val total = file.length()
-        var start = 0L
+        var uploadUrl = existingUrl
+        var start = existingOffset
 
+        if (uploadUrl != null) {
+            val status = runCatching { getAbsolute(token, uploadUrl!!) }.getOrNull()
+            if (status == null) {
+                uploadUrl = null
+            } else {
+                val next = status.optJSONArray("nextExpectedRanges")?.optString(0).orEmpty()
+                start = next.substringBefore('-').toLongOrNull() ?: 0
+                val expires = parseTime(status.optString("expirationDateTime"))
+                if (expires in 1..System.currentTimeMillis()) uploadUrl = null
+            }
+        }
+
+        if (uploadUrl == null) {
+            val encoded = URLEncoder.encode(name, "UTF-8").replace("+", "%20")
+            val session = postJson(
+                token,
+                "/me/drive/items/$parentId:/$encoded:/createUploadSession",
+                JSONObject().put(
+                    "item",
+                    JSONObject().put("@microsoft.graph.conflictBehavior", "replace"),
+                ),
+            )
+            uploadUrl = session.getString("uploadUrl")
+            start = 0
+        }
+
+        val url = uploadUrl!!
         val raf = RandomAccessFile(file, "r")
         try {
             while (start < total) {
@@ -212,7 +234,7 @@ class GraphClient {
                 raf.readFully(buffer)
 
                 val request = Request.Builder()
-                    .url(uploadUrl)
+                    .url(url)
                     .header("Content-Range", "bytes $start-$end/$total")
                     .put(buffer.toRequestBody(OCTET_STREAM.toMediaTypeOrNull()))
                     .build()
@@ -220,7 +242,7 @@ class GraphClient {
                 val response = http.newCall(request).execute()
                 try {
                     when {
-                        response.code == 202 -> Unit // 다음 청크
+                        response.code == 202 -> Unit
                         response.isSuccessful -> {
                             val json = JSONObject(response.body?.string().orEmpty())
                             return@withContext parseItem(json)
@@ -232,6 +254,7 @@ class GraphClient {
                 }
 
                 start = end + 1
+                onOffset(url, start)
                 onProgress(((start * 100) / total).toInt())
             }
         } finally {

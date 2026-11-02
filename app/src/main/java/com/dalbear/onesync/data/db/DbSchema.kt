@@ -10,8 +10,8 @@ object DbSchema {
 
     const val DB_NAME = "onesync.db"
 
-    /** v2: FolderPair.includeSubdirectories 추가. v3: delta 캐시 테이블. */
-    const val VERSION = 3
+    /** v2: FolderPair.includeSubdirectories 추가. v3: delta 캐시. v4: 충돌/업로드 세션. */
+    const val VERSION = 4
 
     val globalV1: List<String> = listOf(
         """
@@ -86,6 +86,29 @@ object DbSchema {
             pairId INTEGER PRIMARY KEY,
             link TEXT NOT NULL,
             updatedAt INTEGER NOT NULL
+        )
+        """.trimIndent(),
+        """
+        CREATE TABLE Conflict(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pairId INTEGER NOT NULL,
+            originalPath TEXT NOT NULL,
+            copyPath TEXT NOT NULL,
+            remoteCopyId TEXT,
+            createdAt INTEGER NOT NULL,
+            resolvedAt INTEGER
+        )
+        """.trimIndent(),
+        """
+        CREATE TABLE UploadSession(
+            pairId INTEGER NOT NULL,
+            path TEXT NOT NULL,
+            uploadUrl TEXT NOT NULL,
+            offset INTEGER NOT NULL,
+            fileSize INTEGER NOT NULL,
+            fileModified INTEGER NOT NULL,
+            updatedAt INTEGER NOT NULL,
+            PRIMARY KEY(pairId, path)
         )
         """.trimIndent(),
     )

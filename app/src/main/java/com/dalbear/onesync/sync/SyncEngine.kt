@@ -9,6 +9,7 @@ import com.dalbear.onesync.core.sync.orderedForExecution
 import com.dalbear.onesync.data.DeltaStore
 import com.dalbear.onesync.data.FolderPair
 import com.dalbear.onesync.data.PairRepository
+import com.dalbear.onesync.data.UploadSessionStore
 import com.dalbear.onesync.graph.GraphClient
 import com.dalbear.onesync.graph.DriveItem
 import com.dalbear.onesync.graph.GraphException
@@ -32,6 +33,7 @@ class SyncEngine(
     private val graph: GraphClient,
     private val repo: PairRepository,
     private val deltaStore: DeltaStore,
+    private val uploadStore: UploadSessionStore,
 ) {
 
     data class Summary(
@@ -139,7 +141,7 @@ class SyncEngine(
 
                         else -> {
                             val uploaded = withRetry {
-                                uploadFile(token, parentId, action.path, file, onProgress)
+                                uploadFile(token, pair, action.path, file, parentId, onProgress)
                             }
                             save(pair.id, action.path, localByPath[action.path], remoteEntry(action.path, uploaded))
                             event(pair.id, "upload", action.path, null)
@@ -218,7 +220,7 @@ class SyncEngine(
                             val parentId = parentRemoteId(pair, conflictPath, remoteDirectoryIds)
                             if (parentId != null) {
                                 val uploaded = uploadFile(
-                                    token, parentId, conflictPath, conflictFile, onProgress,
+                                    token, pair, conflictPath, conflictFile, parentId, onProgress,
                                 )
                                 save(
                                     pair.id,
@@ -226,6 +228,7 @@ class SyncEngine(
                                     entryOf(localRoot, conflictPath),
                                     remoteEntry(conflictPath, uploaded),
                                 )
+                                repo.addConflict(pair.id, action.path, conflictPath, uploaded.id)
                             }
                             event(pair.id, "conflict", action.path, "로컬 사본: $conflictName")
                             summary.copy(conflicts = summary.conflicts + 1)
@@ -296,19 +299,37 @@ class SyncEngine(
 
     private suspend fun uploadFile(
         token: String,
-        parentId: String,
+        pair: FolderPair,
         path: String,
         file: File,
+        parentId: String,
         onProgress: (String) -> Unit,
     ): DriveItem {
-        return if (file.length() > MAX_SIMPLE_UPLOAD) {
-            graph.uploadLarge(token, parentId, file.name, file) { percent ->
-                onProgress("업로드: $path ($percent%)")
-            }
-        } else {
+        if (file.length() <= MAX_SIMPLE_UPLOAD) {
             onProgress("업로드: $path")
-            graph.uploadSmall(token, parentId, file.name, file.readBytes(), mimeTypeOf(file.name))
+            return graph.uploadSmall(token, parentId, file.name, file.readBytes(), mimeTypeOf(file.name))
         }
+
+        val existing = uploadStore.find(pair.id, path)
+            ?.takeIf { it.fileSize == file.length() && it.fileModified == file.lastModified() }
+
+        onProgress(
+            "업로드: $path" + if (existing != null) " (이어서 ${existing.offset}B)" else "",
+        )
+        val uploaded = graph.uploadLarge(
+            token = token,
+            parentId = parentId,
+            name = file.name,
+            file = file,
+            existingUrl = existing?.url,
+            existingOffset = existing?.offset ?: 0,
+            onOffset = { url, offset ->
+                uploadStore.save(pair.id, path, url, offset, file.length(), file.lastModified())
+            },
+            onProgress = { percent -> onProgress("업로드: $path ($percent%)") },
+        )
+        uploadStore.clear(pair.id, path)
+        return uploaded
     }
 
     private fun remoteEntry(path: String, item: DriveItem): SnapshotEntry = SnapshotEntry(

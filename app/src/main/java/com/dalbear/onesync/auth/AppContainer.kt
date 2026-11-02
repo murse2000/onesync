@@ -3,7 +3,9 @@ package com.dalbear.onesync.auth
 import android.content.Context
 import com.dalbear.onesync.data.DeltaStore
 import com.dalbear.onesync.data.PairRepository
+import com.dalbear.onesync.data.UploadSessionStore
 import com.dalbear.onesync.graph.GraphClient
+import com.dalbear.onesync.sync.ConflictResolver
 import com.dalbear.onesync.sync.SyncEngine
 
 /**
@@ -16,5 +18,7 @@ class AppContainer(context: Context) {
     val graph: GraphClient = GraphClient()
     val repo: PairRepository = PairRepository(context)
     val deltaStore: DeltaStore = DeltaStore(context, graph)
-    val engine: SyncEngine = SyncEngine(graph, repo, deltaStore)
+    val uploadStore: UploadSessionStore = UploadSessionStore(context)
+    val engine: SyncEngine = SyncEngine(graph, repo, deltaStore, uploadStore)
+    val conflictResolver: ConflictResolver = ConflictResolver(repo, auth, authStore, graph)
 }

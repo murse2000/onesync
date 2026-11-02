@@ -35,6 +35,16 @@ data class HistoryRow(
     val message: String?,
 )
 
+data class ConflictRow(
+    val id: Long,
+    val pairId: Long,
+    val originalPath: String,
+    val copyPath: String,
+    val remoteCopyId: String?,
+    val createdAt: Long,
+    val pairName: String?,
+)
+
 class PairRepository(context: Context) {
 
     private val helper = SyncDatabase(context.applicationContext)
@@ -193,8 +203,7 @@ class PairRepository(context: Context) {
     }
 
     /** 모든 폴더 쌍의 기록을 최신순으로. */
-    fun recentHistory(limit: Int = 200): List<HistoryRow> {
-        val sql = """
+    fun recentHistory(limit: Int = 200): List<HistoryRow> {        val sql = """
             SELECT e.type, e.timestamp, e.path, e.message, p.name AS pairName
             FROM SyncEvent e
             LEFT JOIN FolderPair p ON p.id = e.pairId
@@ -216,8 +225,61 @@ class PairRepository(context: Context) {
         return result
     }
 
-    private fun Cursor.toPair(): FolderPair {
-        val method = getString(getColumnIndexOrThrow("syncMethod"))
+    fun addConflict(
+        pairId: Long,
+        originalPath: String,
+        copyPath: String,
+        remoteCopyId: String?,
+    ) {
+        db.insert("Conflict", null, ContentValues().apply {
+            put("pairId", pairId)
+            put("originalPath", originalPath)
+            put("copyPath", copyPath)
+            put("remoteCopyId", remoteCopyId)
+            put("createdAt", System.currentTimeMillis())
+        })
+    }
+
+    fun unresolvedConflicts(): List<ConflictRow> {
+        val sql = """
+            SELECT c.id, c.pairId, c.originalPath, c.copyPath, c.remoteCopyId, c.createdAt, p.name AS pairName
+            FROM Conflict c
+            LEFT JOIN FolderPair p ON p.id = c.pairId
+            WHERE c.resolvedAt IS NULL
+            ORDER BY c.createdAt DESC
+        """.trimIndent()
+        val result = ArrayList<ConflictRow>()
+        db.rawQuery(sql, null).use { c ->
+            while (c.moveToNext()) {
+                result += ConflictRow(
+                    id = c.getLong(0),
+                    pairId = c.getLong(1),
+                    originalPath = c.getString(2),
+                    copyPath = c.getString(3),
+                    remoteCopyId = c.getString(4),
+                    createdAt = c.getLong(5),
+                    pairName = c.getString(6),
+                )
+            }
+        }
+        return result
+    }
+
+    fun conflictCount(): Int {
+        db.rawQuery("SELECT COUNT(*) FROM Conflict WHERE resolvedAt IS NULL", null).use { c ->
+            return if (c.moveToFirst()) c.getInt(0) else 0
+        }
+    }
+
+    fun resolveConflict(id: Long) {
+        db.update(
+            "Conflict",
+            ContentValues().apply { put("resolvedAt", System.currentTimeMillis()) },
+            "id = ?",
+            arrayOf(id.toString()),
+        )
+    }
+    private fun Cursor.toPair(): FolderPair {        val method = getString(getColumnIndexOrThrow("syncMethod"))
         return FolderPair(
             id = getLong(getColumnIndexOrThrow("id")),
             name = getString(getColumnIndexOrThrow("name")),

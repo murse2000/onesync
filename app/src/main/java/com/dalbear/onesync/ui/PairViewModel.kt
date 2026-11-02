@@ -22,6 +22,9 @@ class PairViewModel(application: Application) : AndroidViewModel(application) {
     var pairs by mutableStateOf<List<FolderPair>>(emptyList())
         private set
 
+    var conflictCount by mutableStateOf(0)
+        private set
+
     // 새 폴더 쌍 화면에서 임시로 들고 있는 선택값
     var pendingRemoteId: String? = null
     var pendingRemotePath: String? = null
@@ -31,6 +34,7 @@ class PairViewModel(application: Application) : AndroidViewModel(application) {
     fun loadPairs() {
         viewModelScope.launch {
             pairs = withContext(Dispatchers.IO) { repo.list() }
+            conflictCount = withContext(Dispatchers.IO) { repo.conflictCount() }
         }
     }
 

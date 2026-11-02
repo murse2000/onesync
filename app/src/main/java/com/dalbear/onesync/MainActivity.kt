@@ -11,6 +11,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.dalbear.onesync.ui.AuthSetupScreen
 import com.dalbear.onesync.ui.AuthViewModel
+import com.dalbear.onesync.ui.ConflictsScreen
+import com.dalbear.onesync.ui.ConflictsViewModel
 import com.dalbear.onesync.ui.DriveViewModel
 import com.dalbear.onesync.ui.HomeScreen
 import com.dalbear.onesync.ui.HistoryScreen
@@ -27,6 +29,7 @@ class MainActivity : ComponentActivity() {
     private val pairViewModel: PairViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val historyViewModel: HistoryViewModel by viewModels()
+    private val conflictsViewModel: ConflictsViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,6 +41,7 @@ class MainActivity : ComponentActivity() {
                 }
                 var showNewPair by rememberSaveable { mutableStateOf(false) }
                 var showHistory by rememberSaveable { mutableStateOf(false) }
+                var showConflicts by rememberSaveable { mutableStateOf(false) }
 
                 when {
                     showSetup -> AuthSetupScreen(
@@ -56,6 +60,11 @@ class MainActivity : ComponentActivity() {
                         onBack = { showHistory = false },
                     )
 
+                    showConflicts -> ConflictsScreen(
+                        viewModel = conflictsViewModel,
+                        onBack = { showConflicts = false },
+                    )
+
                     else -> HomeScreen(
                         viewModel = authViewModel,
                         driveViewModel = driveViewModel,
@@ -67,6 +76,7 @@ class MainActivity : ComponentActivity() {
                             showNewPair = true
                         },
                         onOpenHistory = { showHistory = true },
+                        onOpenConflicts = { showConflicts = true },
                     )
                 }
             }

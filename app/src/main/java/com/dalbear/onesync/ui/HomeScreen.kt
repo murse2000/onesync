@@ -94,6 +94,7 @@ fun HomeScreen(
     onOpenSetup: () -> Unit,
     onNewPair: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenConflicts: () -> Unit,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -212,6 +213,37 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 14.dp, start = 4.dp),
                     )
+                }
+            }
+
+            if (pairViewModel.conflictCount > 0) {
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Outlined.WarningAmber, contentDescription = null)
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "충돌 ${pairViewModel.conflictCount}건",
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
+                                Text(
+                                    "유지할 버전을 선택하세요.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            TextButton(onClick = onOpenConflicts) { Text("확인") }
+                        }
+                    }
                 }
             }
         }
