@@ -9,7 +9,9 @@ package com.dalbear.onesync.data.db
 object DbSchema {
 
     const val DB_NAME = "onesync.db"
-    const val VERSION = 1
+
+    /** v2: FolderPair.includeSubdirectories 추가. */
+    const val VERSION = 2
 
     val globalV1: List<String> = listOf(
         """
@@ -32,6 +34,7 @@ object DbSchema {
             remoteFolderPath TEXT NOT NULL,
             syncMethod TEXT NOT NULL,
             isEnabled INTEGER NOT NULL DEFAULT 1,
+            includeSubdirectories INTEGER NOT NULL DEFAULT 1,
             createdAt INTEGER NOT NULL
         )
         """.trimIndent(),

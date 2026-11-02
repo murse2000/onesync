@@ -52,9 +52,9 @@ class SyncEngine(
         require(localRoot.isDirectory) { "로컬 폴더가 없습니다: ${pair.localRoot}" }
 
         onProgress("로컬 폴더 스캔 중…")
-        val localEntries = LocalScanner.scan(localRoot)
+        val localEntries = LocalScanner.scan(localRoot, pair.includeSubdirectories)
         onProgress("OneDrive 스캔 중…")
-        val remoteEntries = scanRemote(token, pair.remoteFolderId)
+        val remoteEntries = scanRemote(token, pair.remoteFolderId, pair.includeSubdirectories)
 
         val previous = repo.loadState(pair.id)
         val actions = SyncPlanner()
@@ -232,9 +232,13 @@ class SyncEngine(
         return summary
     }
 
-    private suspend fun scanRemote(token: String, rootId: String): List<SnapshotEntry> {
+    private suspend fun scanRemote(
+        token: String,
+        rootId: String,
+        includeSubdirectories: Boolean,
+    ): List<SnapshotEntry> {
         val result = ArrayList<SnapshotEntry>()
-        walkRemote(token, rootId, "", result)
+        walkRemote(token, rootId, "", includeSubdirectories, result)
         return result
     }
 
@@ -242,13 +246,17 @@ class SyncEngine(
         token: String,
         folderId: String,
         prefix: String,
+        includeSubdirectories: Boolean,
         out: MutableList<SnapshotEntry>,
     ) {
         for (item in graph.entries(token, folderId)) {
             val path = if (prefix.isEmpty()) item.name else "$prefix/${item.name}"
-            out += remoteEntry(path, item)
             if (item.isFolder) {
-                walkRemote(token, item.id, path, out)
+                if (!includeSubdirectories) continue
+                out += remoteEntry(path, item)
+                walkRemote(token, item.id, path, includeSubdirectories, out)
+            } else {
+                out += remoteEntry(path, item)
             }
         }
     }

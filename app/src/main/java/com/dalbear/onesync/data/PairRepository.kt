@@ -16,6 +16,7 @@ data class FolderPair(
     val remoteFolderId: String,
     val remoteFolderPath: String,
     val syncMethod: SyncMethod,
+    val includeSubdirectories: Boolean,
 )
 
 data class SyncEventRow(
@@ -31,12 +32,18 @@ class PairRepository(context: Context) {
     private val helper = SyncDatabase(context.applicationContext)
     private val db: SQLiteDatabase get() = helper.writableDatabase
 
+    /** 앱 시작 시 스키마 생성/마이그레이션을 끝내 둔다. */
+    fun ensureOpen() {
+        helper.writableDatabase
+    }
+
     fun create(
         name: String,
         localRoot: String,
         remoteFolderId: String,
         remoteFolderPath: String,
         method: SyncMethod,
+        includeSubdirectories: Boolean,
     ): Long {
         val values = ContentValues().apply {
             put("name", name)
@@ -45,6 +52,7 @@ class PairRepository(context: Context) {
             put("remoteFolderPath", remoteFolderPath)
             put("syncMethod", method.name)
             put("isEnabled", 1)
+            put("includeSubdirectories", if (includeSubdirectories) 1 else 0)
             put("createdAt", System.currentTimeMillis())
         }
         return db.insert("FolderPair", null, values)
@@ -132,8 +140,11 @@ class PairRepository(context: Context) {
         db.delete("SyncItem", "pairId = ? AND path = ?", arrayOf(pairId.toString(), path))
     }
 
-    fun updateMethod(pairId: Long, method: SyncMethod) {
-        val values = ContentValues().apply { put("syncMethod", method.name) }
+    fun updateOptions(pairId: Long, method: SyncMethod, includeSubdirectories: Boolean) {
+        val values = ContentValues().apply {
+            put("syncMethod", method.name)
+            put("includeSubdirectories", if (includeSubdirectories) 1 else 0)
+        }
         db.update("FolderPair", values, "id = ?", arrayOf(pairId.toString()))
     }
 
@@ -182,6 +193,7 @@ class PairRepository(context: Context) {
             remoteFolderId = getString(getColumnIndexOrThrow("remoteFolderId")),
             remoteFolderPath = getString(getColumnIndexOrThrow("remoteFolderPath")),
             syncMethod = runCatching { SyncMethod.valueOf(method) }.getOrDefault(SyncMethod.TWO_WAY),
+            includeSubdirectories = getInt(getColumnIndexOrThrow("includeSubdirectories")) != 0,
         )
     }
 }

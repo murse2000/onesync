@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -176,7 +177,7 @@ fun HomeScreen(
                 }
             }
 
-            SectionCard("폴더 쌍") {
+            SectionCard("폴더 쌍 (${pairViewModel.pairs.size}개)") {
                 val pairs = pairViewModel.pairs
                 if (pairs.isEmpty()) {
                     Text(
@@ -194,7 +195,8 @@ fun HomeScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                syncMethodLabel(pair.syncMethod),
+                                "${syncMethodLabel(pair.syncMethod)} · " +
+                                    if (pair.includeSubdirectories) "하위 폴더 포함" else "최상위 파일만",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -210,7 +212,7 @@ fun HomeScreen(
                                     onClick = { editingPair = pair },
                                     enabled = !pairViewModel.busy,
                                 ) {
-                                    Text("방식 변경")
+                                    Text("설정")
                                 }
                                 TextButton(
                                     onClick = { pairViewModel.deletePair(pair) },
@@ -225,11 +227,22 @@ fun HomeScreen(
                 }
 
                 Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = onNewPair,
-                    enabled = viewModel.accountEmail != null && !pairViewModel.busy,
-                ) {
-                    Text("새 폴더 쌍 만들기")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (pairs.size > 1) {
+                        Button(
+                            onClick = { pairViewModel.syncAll() },
+                            enabled = !pairViewModel.busy && viewModel.accountEmail != null,
+                        ) {
+                            Text("전체 동기화")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Button(
+                        onClick = onNewPair,
+                        enabled = viewModel.accountEmail != null && !pairViewModel.busy,
+                    ) {
+                        Text("새 폴더 쌍 만들기")
+                    }
                 }
                 if (viewModel.accountEmail == null) {
                     Text(
@@ -261,24 +274,27 @@ fun HomeScreen(
 
     val selected = editingPair
     if (selected != null) {
+        var dialogMethod by remember(selected.id) { mutableStateOf(selected.syncMethod) }
+        var dialogSubdirectories by remember(selected.id) {
+            mutableStateOf(selected.includeSubdirectories)
+        }
+
         AlertDialog(
             onDismissRequest = { editingPair = null },
-            title = { Text("동기화 방식") },
+            title = { Text("폴더 쌍 설정") },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text("동기화 방식", style = MaterialTheme.typography.titleSmall)
                     SyncMethod.entries.forEach { method ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    pairViewModel.updateMethod(selected, method)
-                                    editingPair = null
-                                }
+                                .clickable { dialogMethod = method }
                                 .padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             RadioButton(
-                                selected = selected.syncMethod == method,
+                                selected = dialogMethod == method,
                                 onClick = null,
                             )
                             Text(
@@ -287,10 +303,41 @@ fun HomeScreen(
                             )
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { dialogSubdirectories = !dialogSubdirectories }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = dialogSubdirectories,
+                            onCheckedChange = { dialogSubdirectories = it },
+                        )
+                        Text(
+                            "하위 폴더와 내용까지 동기화",
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { editingPair = null }) { Text("닫기") }
+                TextButton(
+                    onClick = {
+                        pairViewModel.updateOptions(
+                            selected,
+                            dialogMethod,
+                            dialogSubdirectories,
+                        )
+                        editingPair = null
+                    },
+                ) {
+                    Text("저장")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingPair = null }) { Text("취소") }
             },
         )
     }

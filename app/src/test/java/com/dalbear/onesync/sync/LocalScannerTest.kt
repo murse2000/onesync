@@ -29,6 +29,22 @@ class LocalScannerTest {
     }
 
     @Test
+    fun `top level scan skips subdirectories and their contents`() {
+        val root = Files.createTempDirectory("onesync-scan-top").toFile()
+        try {
+            File(root, "top.txt").writeText("top")
+            val sub = File(root, "sub").apply { mkdirs() }
+            File(sub, "nested.txt").writeText("nested")
+
+            val entries = LocalScanner.scan(root, includeSubdirectories = false)
+
+            assertEquals(listOf("top.txt"), entries.map { it.path })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `missing directory returns empty list`() {
         val missing = File("definitely-not-a-real-directory-12345")
         assertEquals(emptyList<Any>(), LocalScanner.scan(missing))

@@ -40,6 +40,7 @@ class PairViewModel(application: Application) : AndroidViewModel(application) {
     var pendingRemoteId: String? = null
     var pendingRemotePath: String? = null
     var pendingLocalPath: String? = null
+    var pendingIncludeSubdirectories by mutableStateOf(true)
 
     fun loadPairs() {
         viewModelScope.launch {
@@ -47,14 +48,14 @@ class PairViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun createPair(name: String, method: SyncMethod): Boolean {
+    fun createPair(name: String, method: SyncMethod, includeSubdirectories: Boolean): Boolean {
         val remoteId = pendingRemoteId ?: return false
         val remotePath = pendingRemotePath ?: return false
         val localPath = pendingLocalPath ?: return false
         val trimmed = name.trim().ifEmpty { "OneDrive 동기화" }
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                repo.create(trimmed, localPath, remoteId, remotePath, method)
+                repo.create(trimmed, localPath, remoteId, remotePath, method, includeSubdirectories)
             }
             clearPending()
             loadPairs()
@@ -66,6 +67,7 @@ class PairViewModel(application: Application) : AndroidViewModel(application) {
         pendingRemoteId = null
         pendingRemotePath = null
         pendingLocalPath = null
+        pendingIncludeSubdirectories = true
     }
 
     fun deletePair(pair: FolderPair) {
@@ -75,39 +77,56 @@ class PairViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateMethod(pair: FolderPair, method: SyncMethod) {
+    fun updateOptions(pair: FolderPair, method: SyncMethod, includeSubdirectories: Boolean) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { repo.updateMethod(pair.id, method) }
+            withContext(Dispatchers.IO) { repo.updateOptions(pair.id, method, includeSubdirectories) }
             loadPairs()
         }
     }
 
     fun events(pairId: Long): List<SyncEventRow> = repo.recentEvents(pairId, 10)
 
+    /** 폴더 쌍 하나를 동기화한다. */
     fun sync(pair: FolderPair) {
         if (busy) return
+        viewModelScope.launch { runSync(listOf(pair)) }
+    }
+
+    /** 등록된 모든 폴더 쌍을 순서대로 동기화한다. */
+    fun syncAll() {
+        if (busy) return
+        viewModelScope.launch { runSync(pairs) }
+    }
+
+    private suspend fun runSync(targets: List<FolderPair>) {
+        if (targets.isEmpty()) return
         val clientId = store.clientId ?: return
-        viewModelScope.launch {
-            busy = true
-            status = null
-            _progress.value = "준비 중…"
-            try {
-                val account = auth.accounts(clientId).firstOrNull()
-                    ?: throw IllegalStateException("로그인이 필요합니다")
-                val token = auth.accessToken(clientId, account).getOrElse {
-                    throw IllegalStateException(it.localizedMessage ?: "토큰을 가져오지 못했습니다")
-                }
-                val summary = withContext(Dispatchers.IO) {
-                    engine.sync(pair, token) { message -> _progress.value = message }
-                }
-                status = "동기화 완료: ${summary.toMessage()}"
-            } catch (e: Exception) {
-                status = "동기화 실패: ${e.localizedMessage ?: e.javaClass.simpleName}"
-            } finally {
-                _progress.value = null
-                busy = false
-                loadPairs()
+        busy = true
+        status = null
+        try {
+            val account = auth.accounts(clientId).firstOrNull()
+                ?: throw IllegalStateException("로그인이 필요합니다")
+            val token = auth.accessToken(clientId, account).getOrElse {
+                throw IllegalStateException(it.localizedMessage ?: "토큰을 가져오지 못했습니다")
             }
+
+            val results = mutableListOf<String>()
+            for (pair in targets) {
+                _progress.value = "${pair.name}: 준비 중…"
+                val summary = withContext(Dispatchers.IO) {
+                    engine.sync(pair, token) { message ->
+                        _progress.value = "${pair.name}: $message"
+                    }
+                }
+                results += "${pair.name}: ${summary.toMessage()}"
+            }
+            status = "동기화 완료\n" + results.joinToString("\n")
+        } catch (e: Exception) {
+            status = "동기화 실패: ${e.localizedMessage ?: e.javaClass.simpleName}"
+        } finally {
+            _progress.value = null
+            busy = false
+            loadPairs()
         }
     }
 }

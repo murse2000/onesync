@@ -12,11 +12,11 @@ class SyncDatabase(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // v1에서는 아직 마이그레이션이 없다. 개발 중에는 앱 데이터를 지우면 된다.
-        db.execSQL("DROP TABLE IF EXISTS SyncEvent")
-        db.execSQL("DROP TABLE IF EXISTS SyncItem")
-        db.execSQL("DROP TABLE IF EXISTS FolderPair")
-        db.execSQL("DROP TABLE IF EXISTS Account")
-        onCreate(db)
+        if (oldVersion < 2) {
+            // 기존 폴더 쌍은 하위 폴더 포함을 기본값으로 유지한다.
+            db.execSQL(
+                "ALTER TABLE FolderPair ADD COLUMN includeSubdirectories INTEGER NOT NULL DEFAULT 1",
+            )
+        }
     }
 }

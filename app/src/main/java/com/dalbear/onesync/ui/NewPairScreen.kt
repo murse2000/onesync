@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.dalbear.onesync.core.sync.SyncMethod
@@ -123,9 +125,32 @@ fun NewPairScreen(
                     }
                 }
 
+                SectionCard("동기화 범위") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = viewModel.pendingIncludeSubdirectories,
+                            onCheckedChange = { viewModel.pendingIncludeSubdirectories = it },
+                        )
+                        Text("하위 폴더와 내용까지 동기화")
+                    }
+                    Text(
+                        "끄면 선택한 폴더의 최상위 파일만 동기화합니다.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
                 Button(
                     onClick = {
-                        if (viewModel.createPair(name, method)) onDone()
+                        if (
+                            viewModel.createPair(
+                                name,
+                                method,
+                                viewModel.pendingIncludeSubdirectories,
+                            )
+                        ) {
+                            onDone()
+                        }
                     },
                     enabled = viewModel.pendingRemoteId != null &&
                         viewModel.pendingRemotePath != null &&
