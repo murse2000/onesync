@@ -102,7 +102,7 @@ class MonitoringService : Service() {
         observers.clear()
 
         val container = (application as OneSyncApp).container
-        for (pair in container.repo.list()) {
+        for (pair in container.repo.listEnabled()) {
             val root = File(pair.localRoot)
             if (!root.isDirectory) continue
             val observer = RecursiveFileObserver(

@@ -2,9 +2,7 @@ package com.dalbear.onesync.sync
 
 import android.content.Context
 import androidx.work.BackoffPolicy
-import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
@@ -17,20 +15,17 @@ object AutoSyncScheduler {
 
     private const val WORK_NAME = "onesync-periodic-sync"
 
-    fun apply(context: Context, enabled: Boolean, intervalMinutes: Int) {
+    fun apply(context: Context) {
+        val store = AutoSyncStore(context)
         val workManager = WorkManager.getInstance(context)
-        if (!enabled) {
+        if (!store.enabled) {
             workManager.cancelUniqueWork(WORK_NAME)
             return
         }
 
-        val interval = intervalMinutes.coerceAtLeast(AutoSyncStore.MIN_INTERVAL)
+        val interval = store.intervalMinutes.coerceAtLeast(AutoSyncStore.MIN_INTERVAL)
         val request = PeriodicWorkRequestBuilder<AutoSyncWorker>(interval.toLong(), TimeUnit.MINUTES)
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build(),
-            )
+            .setConstraints(store.constraints())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.MINUTES)
             .build()
 

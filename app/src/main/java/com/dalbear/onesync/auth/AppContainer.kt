@@ -6,6 +6,7 @@ import com.dalbear.onesync.data.PairRepository
 import com.dalbear.onesync.data.UploadSessionStore
 import com.dalbear.onesync.graph.GraphClient
 import com.dalbear.onesync.sync.ConflictResolver
+import com.dalbear.onesync.sync.ExcludeStore
 import com.dalbear.onesync.sync.SyncEngine
 
 /**
@@ -20,6 +21,7 @@ class AppContainer(context: Context) {
     val repo: PairRepository = PairRepository(context)
     val deltaStore: DeltaStore = DeltaStore(context, graph)
     val uploadStore: UploadSessionStore = UploadSessionStore(context)
-    val engine: SyncEngine = SyncEngine(graph, repo, deltaStore, uploadStore)
+    val excludeStore: ExcludeStore = ExcludeStore(context)
+    val engine: SyncEngine = SyncEngine(graph, repo, deltaStore, uploadStore, excludeStore)
     val conflictResolver: ConflictResolver = ConflictResolver(repo, sessions, graph)
 }

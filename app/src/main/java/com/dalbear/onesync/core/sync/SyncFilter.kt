@@ -4,6 +4,7 @@ package com.dalbear.onesync.core.sync
  * 이름 기반 제외 규칙.
  *
  * 이름 패턴은 원본 앱과 같이 "전체 경로"가 아니라 "파일/폴더 이름"에 적용한다.
+ * 상위 폴더 이름이 걸리면 그 하위 경로도 함께 제외한다.
  * 포함 패턴은 파일에만 적용한다. 폴더는 항상 순회해야 하위 파일을 판단할 수 있기 때문이다.
  */
 data class FilterOptions(
@@ -12,16 +13,27 @@ data class FilterOptions(
     val onlyTopLevel: Boolean = false,
     val includePatterns: List<String> = emptyList(),
     val excludePatterns: List<String> = emptyList(),
+    /** 0보다 크면 이 크기를 넘는 파일을 제외한다. */
+    val maxFileSize: Long = 0,
 )
 
 class SyncFilter(private val options: FilterOptions = FilterOptions()) {
 
-    fun isExcluded(path: String, isDirectory: Boolean): Boolean {
-        val name = path.substringAfterLast('/')
+    /** [size]는 파일 크기. 폴더는 0을 넘긴다. */
+    fun isExcluded(path: String, isDirectory: Boolean, size: Long = 0): Boolean {
         if (options.onlyTopLevel && path.contains('/')) return true
-        if (options.excludeHidden && name.startsWith(".")) return true
-        if (options.excludePatterns.any { matches(it, name) }) return true
+        if (options.maxFileSize > 0 && !isDirectory && size > options.maxFileSize) return true
+
+        val segments = path.split('/')
+        if (options.excludeHidden && segments.any { it.startsWith(".") }) return true
+        if (options.excludePatterns.isNotEmpty() &&
+            segments.any { name -> options.excludePatterns.any { matches(it, name) } }
+        ) {
+            return true
+        }
+
         if (!isDirectory && options.includePatterns.isNotEmpty()) {
+            val name = segments.last()
             return options.includePatterns.none { matches(it, name) }
         }
         return false

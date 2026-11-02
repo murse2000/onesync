@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.provider.Settings
+import android.text.format.DateUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -97,6 +98,7 @@ fun HomeScreen(
     onOpenHistory: () -> Unit,
     onOpenConflicts: () -> Unit,
     onOpenGuide: () -> Unit,
+    onOpenAdvanced: () -> Unit,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -236,6 +238,7 @@ fun HomeScreen(
                         accountLabel = pair.accountId?.let { pairViewModel.accountLabels[it] }
                             ?: pairViewModel.accountLabels[accounts.firstOrNull()?.id],
                         showAccount = accounts.size > 1,
+                        lastSyncAt = pairViewModel.lastSyncTimes[pair.id],
                         busy = syncState.running,
                         onSync = { pairViewModel.sync(pair) },
                         onClick = { editingPair = pair },
@@ -295,8 +298,8 @@ fun HomeScreen(
             accountLabel = selected.accountId?.let { pairViewModel.accountLabels[it] }
                 ?: pairViewModel.accountLabels[accounts.firstOrNull()?.id],
             onDismiss = { editingPair = null },
-            onSave = { method, subdirectories ->
-                pairViewModel.updateOptions(selected, method, subdirectories)
+            onSave = { method, subdirectories, enabled ->
+                pairViewModel.updateOptions(selected, method, subdirectories, enabled)
                 editingPair = null
             },
             onDelete = {
@@ -313,15 +316,10 @@ fun HomeScreen(
         ) {
             when (sheet) {
                 HomeSheet.SETTINGS -> SettingsSheet(
+                    viewModel = settingsViewModel,
                     email = email,
                     accountCount = accounts.size,
-                    hasAllFilesAccess = hasAllFilesAccess,
-                    autoSyncEnabled = settingsViewModel.autoSyncEnabled,
-                    autoSyncInterval = settingsViewModel.autoSyncInterval,
-                    onAutoSyncChange = settingsViewModel::updateAutoSyncEnabled,
                     onIntervalClick = { showIntervalDialog = true },
-                    instantUploadEnabled = settingsViewModel.instantUploadEnabled,
-                    onInstantUploadChange = settingsViewModel::updateInstantUpload,
                     onOpenSetup = {
                         sheet = null
                         onOpenSetup()
@@ -331,7 +329,10 @@ fun HomeScreen(
                         sheet = null
                         onOpenGuide()
                     },
-                    onOpenAllFilesSettings = { openAllFilesAccessSettings(context) },
+                    onOpenAdvanced = {
+                        sheet = null
+                        onOpenAdvanced()
+                    },
                 )
 
                 HomeSheet.ACCOUNTS -> AccountsSheet(
@@ -685,6 +686,7 @@ private fun PairRow(
     pair: FolderPair,
     accountLabel: String?,
     showAccount: Boolean,
+    lastSyncAt: Long?,
     busy: Boolean,
     onSync: () -> Unit,
     onClick: () -> Unit,
@@ -729,19 +731,26 @@ private fun PairRow(
             Spacer(Modifier.height(2.dp))
             Text(
                 buildString {
+                    if (!pair.enabled) append("꺼짐 · ")
                     // 계정이 하나면 굳이 반복하지 않는다.
                     if (showAccount && accountLabel != null) append("$accountLabel · ")
                     append(syncMethodLabel(pair.syncMethod))
                     append(" · ")
                     append(if (pair.includeSubdirectories) "하위 폴더" else "최상위만")
+                    append(" · ")
+                    append(if (lastSyncAt != null) relativeTime(lastSyncAt) else "아직 동기화 안 함")
                 },
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (pair.enabled) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.tertiary
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        IconButton(onClick = onSync, enabled = !busy) {
+        IconButton(onClick = onSync, enabled = !busy && pair.enabled) {
             Icon(
                 Icons.Outlined.Sync,
                 contentDescription = "지금 동기화",
@@ -972,11 +981,12 @@ private fun PairSettingsDialog(
     pair: FolderPair,
     accountLabel: String?,
     onDismiss: () -> Unit,
-    onSave: (SyncMethod, Boolean) -> Unit,
+    onSave: (SyncMethod, Boolean, Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
     var method by remember(pair.id) { mutableStateOf(pair.syncMethod) }
     var subdirectories by remember(pair.id) { mutableStateOf(pair.includeSubdirectories) }
+    var enabled by remember(pair.id) { mutableStateOf(pair.enabled) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -995,7 +1005,31 @@ private fun PairSettingsDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.small)
+                        .clickable { enabled = !enabled }
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    Column(modifier = Modifier.padding(start = 10.dp)) {
+                        Text("동기화 사용", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            if (enabled) {
+                                "자동·전체 동기화에 포함됩니다."
+                            } else {
+                                "꺼 두면 자동 동기화에서 빠집니다."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
                 Text("동기화 방식", style = MaterialTheme.typography.titleSmall)
                 SyncMethod.entries.forEach { candidate ->
                     Row(
@@ -1043,221 +1077,20 @@ private fun PairSettingsDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(method, subdirectories) }) { Text("저장") } },
+        confirmButton = { TextButton(onClick = { onSave(method, subdirectories, enabled) }) { Text("저장") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SettingsSheet(
-    email: String?,
-    accountCount: Int,
-    hasAllFilesAccess: Boolean,
-    autoSyncEnabled: Boolean,
-    autoSyncInterval: Int,
-    onAutoSyncChange: (Boolean) -> Unit,
-    onIntervalClick: () -> Unit,
-    instantUploadEnabled: Boolean,
-    onInstantUploadChange: (Boolean) -> Unit,
-    onOpenSetup: () -> Unit,
-    onManageAccounts: () -> Unit,
-    onOpenGuide: () -> Unit,
-    onOpenAllFilesSettings: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(bottom = 24.dp),
-    ) {
-        Text("설정", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(16.dp))
-
-        SettingsRow(
-            icon = Icons.Outlined.Cloud,
-            title = "OneDrive 계정",
-            value = when {
-                email == null -> "로그인 안 됨"
-                accountCount > 1 -> "${accountCount}개 계정 · ${email}"
-                else -> email
-            },
-            onClick = onManageAccounts,
-        )
-        SettingsRow(
-            icon = Icons.Outlined.Storage,
-            title = "기기 파일 접근",
-            value = if (hasAllFilesAccess) "모든 파일 액세스 허용됨" else "권한 필요",
-            onClick = if (hasAllFilesAccess) null else onOpenAllFilesSettings,
-        )
-        SettingsRow(
-            icon = Icons.Outlined.Key,
-            title = "앱 등록",
-            value = "클라이언트 ID로 로그인",
-            onClick = onOpenSetup,
-        )
-        SettingsRow(
-            icon = Icons.Outlined.HelpOutline,
-            title = "사용법",
-            value = "로그인부터 동기화까지 안내",
-            onClick = onOpenGuide,
-        )
-
-        Spacer(Modifier.height(8.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Spacer(Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Outlined.Sync,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("자동 동기화", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    if (autoSyncEnabled) {
-                        "켜짐 · ${autoSyncIntervalLabel(autoSyncInterval)}"
-                    } else {
-                        "꺼짐"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(checked = autoSyncEnabled, onCheckedChange = onAutoSyncChange)
-        }
-
-        if (autoSyncEnabled) {
-            SettingsRow(
-                icon = Icons.Outlined.Schedule,
-                title = "동기화 주기",
-                value = autoSyncIntervalLabel(autoSyncInterval),
-                onClick = onIntervalClick,
-            )
-            Text(
-                "Android가 백그라운드 실행을 지연할 수 있어 실제 간격은 조금 더 길 수 있습니다.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Outlined.Bolt,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("즉시 업로드", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    if (instantUploadEnabled) {
-                        "폴더 변경을 감지해 바로 동기화합니다."
-                    } else {
-                        "꺼짐"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(checked = instantUploadEnabled, onCheckedChange = onInstantUploadChange)
-        }
-
-        Spacer(Modifier.height(8.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            "OneSync Lab 0.1.0",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun SettingsRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    value: String,
-    onClick: (() -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.small)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                value,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (onClick != null) {
-            Icon(
-                Icons.Outlined.ExpandMore,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-    }
-}
-
 /** 홈에서 여는 바텀시트. 하나의 시트를 돌려 쓴다. */
 private enum class HomeSheet { SETTINGS, ACCOUNTS }
+
+private fun relativeTime(timestamp: Long): String =
+    DateUtils.getRelativeTimeSpanString(
+        timestamp,
+        System.currentTimeMillis(),
+        DateUtils.MINUTE_IN_MILLIS,
+    ).toString()
 
 private fun shortPath(path: String, keep: Int = 2): String {
     val parts = path.split('/').filter { it.isNotEmpty() }
@@ -1267,9 +1100,9 @@ private fun shortPath(path: String, keep: Int = 2): String {
 private fun remoteLabel(path: String): String =
     if (path.isBlank() || path == "/") "OneDrive" else "OneDrive/$path"
 
-private fun isAllFilesAccessGranted(): Boolean = Environment.isExternalStorageManager()
+internal fun isAllFilesAccessGranted(): Boolean = Environment.isExternalStorageManager()
 
-private fun openAllFilesAccessSettings(context: android.content.Context) {
+internal fun openAllFilesAccessSettings(context: android.content.Context) {
     val appIntent = Intent(
         Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
         Uri.fromParts("package", context.packageName, null),

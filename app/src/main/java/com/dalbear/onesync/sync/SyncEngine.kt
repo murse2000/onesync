@@ -34,6 +34,7 @@ class SyncEngine(
     private val repo: PairRepository,
     private val deltaStore: DeltaStore,
     private val uploadStore: UploadSessionStore,
+    private val excludes: ExcludeStore,
 ) {
 
     data class Summary(
@@ -73,10 +74,14 @@ class SyncEngine(
         val localRoot = File(pair.localRoot)
         require(localRoot.isDirectory) { "로컬 폴더가 없습니다: ${pair.localRoot}" }
 
+        // 제외 규칙은 양쪽 스캔에 똑같이 적용한다. 한쪽만 빼면 삭제로 오판한다.
+        val filter = excludes.filter()
         onProgress("로컬 폴더 스캔 중…")
         val localEntries = LocalScanner.scan(localRoot, pair.includeSubdirectories)
+            .filterNot { filter.isExcluded(it.path, it.isDirectory, it.size) }
         onProgress("OneDrive 스캔 중…")
         val remoteEntries = scanRemote(token, pair)
+            .filterNot { filter.isExcluded(it.path, it.isDirectory, it.size) }
 
         val previous = repo.loadState(pair.id)
         val actions = SyncPlanner()

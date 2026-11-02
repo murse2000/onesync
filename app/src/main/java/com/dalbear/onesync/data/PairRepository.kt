@@ -8,6 +8,8 @@ import com.dalbear.onesync.core.sync.SnapshotEntry
 import com.dalbear.onesync.core.sync.SyncMethod
 import com.dalbear.onesync.core.sync.SyncState
 import com.dalbear.onesync.data.db.SyncDatabase
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class FolderPair(
     val id: Long,
@@ -19,6 +21,8 @@ data class FolderPair(
     val includeSubdirectories: Boolean,
     /** 이 폴더 쌍이 동기화할 MSAL 계정 ID. null이면 첫 계정(예전 폴더 쌍). */
     val accountId: String? = null,
+    /** 꺼 두면 자동·전체 동기화에서 빠진다. */
+    val enabled: Boolean = true,
 )
 
 data class SyncEventRow(
@@ -84,6 +88,30 @@ class PairRepository(context: Context) {
         val result = ArrayList<FolderPair>()
         db.query("FolderPair", null, null, null, null, null, "id").use { cursor ->
             while (cursor.moveToNext()) result += cursor.toPair()
+        }
+        return result
+    }
+
+    /** 켜 둔 폴더 쌍만. 자동·전체·즉시 동기화가 쓴다. */
+    fun listEnabled(): List<FolderPair> = list().filter { it.enabled }
+
+    fun setEnabled(id: Long, enabled: Boolean) {
+        db.update(
+            "FolderPair",
+            ContentValues().apply { put("isEnabled", if (enabled) 1 else 0) },
+            "id = ?",
+            arrayOf(id.toString()),
+        )
+    }
+
+    /** 폴더 쌍별 마지막 동기화 시각(성공 기록 기준). */
+    fun lastSyncTimes(): Map<Long, Long> {
+        val result = HashMap<Long, Long>()
+        db.rawQuery(
+            "SELECT pairId, MAX(timestamp) FROM SyncEvent WHERE type = 'sync' GROUP BY pairId",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) result[c.getLong(0)] = c.getLong(1)
         }
         return result
     }
@@ -162,12 +190,74 @@ class PairRepository(context: Context) {
         db.delete("SyncItem", "pairId = ? AND path = ?", arrayOf(pairId.toString(), path))
     }
 
-    fun updateOptions(pairId: Long, method: SyncMethod, includeSubdirectories: Boolean) {
+    fun updateOptions(
+        pairId: Long,
+        method: SyncMethod,
+        includeSubdirectories: Boolean,
+        enabled: Boolean,
+    ) {
         val values = ContentValues().apply {
             put("syncMethod", method.name)
             put("includeSubdirectories", if (includeSubdirectories) 1 else 0)
+            put("isEnabled", if (enabled) 1 else 0)
         }
         db.update("FolderPair", values, "id = ?", arrayOf(pairId.toString()))
+    }
+
+    /** 폴더 쌍 설정을 JSON으로 내보낸다. 동기화 상태는 담지 않는다. */
+    fun exportJson(): String {
+        val pairs = JSONArray()
+        list().forEach { pair ->
+            pairs.put(
+                JSONObject()
+                    .put("name", pair.name)
+                    .put("localRoot", pair.localRoot)
+                    .put("remoteFolderId", pair.remoteFolderId)
+                    .put("remoteFolderPath", pair.remoteFolderPath)
+                    .put("syncMethod", pair.syncMethod.name)
+                    .put("includeSubdirectories", pair.includeSubdirectories)
+                    .put("enabled", pair.enabled)
+                    .put("accountId", pair.accountId),
+            )
+        }
+        return JSONObject()
+            .put("version", 1)
+            .put("pairs", pairs)
+            .toString(2)
+    }
+
+    /**
+     * 내보낸 JSON을 가져온다. 이미 있는 (로컬 경로, 원격 폴더) 조합은 건너뛴다.
+     * 동기화 상태는 새로 만들지 않으므로 다음 동기화에서 양쪽을 다시 비교한다.
+     * @return 새로 추가한 폴더 쌍 수
+     */
+    fun importJson(text: String): Int {
+        val root = JSONObject(text)
+        val pairs = root.optJSONArray("pairs") ?: return 0
+        val existing = list()
+        var added = 0
+        for (i in 0 until pairs.length()) {
+            val item = pairs.optJSONObject(i) ?: continue
+            val localRoot = item.optString("localRoot")
+            val remoteFolderId = item.optString("remoteFolderId")
+            if (localRoot.isBlank() || remoteFolderId.isBlank()) continue
+            if (existing.any { it.localRoot == localRoot && it.remoteFolderId == remoteFolderId }) continue
+
+            val id = create(
+                name = item.optString("name").ifBlank { "OneDrive 동기화" },
+                localRoot = localRoot,
+                remoteFolderId = remoteFolderId,
+                remoteFolderPath = item.optString("remoteFolderPath"),
+                method = runCatching {
+                    SyncMethod.valueOf(item.optString("syncMethod"))
+                }.getOrDefault(SyncMethod.TWO_WAY),
+                includeSubdirectories = item.optBoolean("includeSubdirectories", true),
+                accountId = item.optString("accountId").takeIf { it.isNotBlank() },
+            )
+            setEnabled(id, item.optBoolean("enabled", true))
+            added++
+        }
+        return added
     }
 
     fun addEvent(pairId: Long, type: String, path: String?, message: String?) {
@@ -296,6 +386,7 @@ class PairRepository(context: Context) {
             syncMethod = runCatching { SyncMethod.valueOf(method) }.getOrDefault(SyncMethod.TWO_WAY),
             includeSubdirectories = getInt(getColumnIndexOrThrow("includeSubdirectories")) != 0,
             accountId = if (isNull(accountIndex)) null else getString(accountIndex),
+            enabled = getInt(getColumnIndexOrThrow("isEnabled")) != 0,
         )
     }
 }

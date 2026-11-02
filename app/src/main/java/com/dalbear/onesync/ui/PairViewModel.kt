@@ -29,6 +29,10 @@ class PairViewModel(application: Application) : AndroidViewModel(application) {
     var accountLabels by mutableStateOf<Map<String, String>>(emptyMap())
         private set
 
+    /** 폴더 쌍 ID → 마지막 동기화 시각. */
+    var lastSyncTimes by mutableStateOf<Map<Long, Long>>(emptyMap())
+        private set
+
     // 새 폴더 쌍 화면에서 임시로 들고 있는 선택값
     var pendingRemoteId: String? = null
     var pendingRemotePath: String? = null
@@ -42,6 +46,7 @@ class PairViewModel(application: Application) : AndroidViewModel(application) {
             accountLabels = withContext(Dispatchers.IO) {
                 container.sessions.list().associate { it.id to it.username }
             }
+            lastSyncTimes = withContext(Dispatchers.IO) { repo.lastSyncTimes() }
         }
     }
 
@@ -93,12 +98,21 @@ class PairViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateOptions(pair: FolderPair, method: SyncMethod, includeSubdirectories: Boolean) {
+    fun updateOptions(
+        pair: FolderPair,
+        method: SyncMethod,
+        includeSubdirectories: Boolean,
+        enabled: Boolean,
+    ) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { repo.updateOptions(pair.id, method, includeSubdirectories) }
+            withContext(Dispatchers.IO) {
+                repo.updateOptions(pair.id, method, includeSubdirectories, enabled)
+            }
             loadPairs()
         }
     }
+
+
 
     fun sync(pair: FolderPair) {
         SyncService.start(getApplication(), pair.id)

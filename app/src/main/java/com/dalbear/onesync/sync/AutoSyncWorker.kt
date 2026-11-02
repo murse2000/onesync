@@ -19,7 +19,15 @@ class AutoSyncWorker(
         val sessions = container.sessions
         if (sessions.list().isEmpty()) return Result.success()
 
-        val pairs = container.repo.list()
+        // 직접 누른 동기화가 아직 돌고 있으면 이번 주기는 건너뛴다.
+        // 끝나자마자 같은 전체 스캔을 한 번 더 하는 걸 막는다.
+        if (SyncCoordinator.state.value.running) return Result.success()
+
+        val now = System.currentTimeMillis()
+        val lastSync = container.repo.lastSyncTimes()
+        // 방금 동기화한 폴더 쌍은 다시 스캔하지 않는다.
+        val pairs = container.repo.listEnabled()
+            .filter { isSyncDue(lastSync[it.id], now) }
         if (pairs.isEmpty()) return Result.success()
 
         var failures = 0
@@ -45,4 +53,18 @@ class AutoSyncWorker(
         // 전부 네트워크/일시 오류로 실패했을 때만 백오프 재시도를 요청한다.
         return if (failures == pairs.size && authFailures == 0) Result.retry() else Result.success()
     }
+
 }
+
+/** 이 시간 안에 끝난 동기화는 곧바로 다시 돌지 않는다. */
+const val RECENT_SYNC_WINDOW_MS = 2 * 60 * 1000L
+
+/**
+ * 주기 실행 시점에 이 폴더 쌍을 동기화해야 하는지.
+ * 방금(수동) 동기화가 끝났거나, 기기 시계가 앞서 있어 마지막 기록이 미래면 건너뛴다.
+ */
+fun isSyncDue(
+    lastSyncAt: Long?,
+    now: Long,
+    windowMs: Long = RECENT_SYNC_WINDOW_MS,
+): Boolean = lastSyncAt == null || now - lastSyncAt >= windowMs

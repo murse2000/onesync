@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import com.dalbear.onesync.ui.AdvancedSettingsScreen
 import com.dalbear.onesync.ui.AuthSetupScreen
 import com.dalbear.onesync.ui.AuthViewModel
 import com.dalbear.onesync.ui.ConflictsScreen
@@ -44,6 +45,7 @@ class MainActivity : ComponentActivity() {
                 var showHistory by rememberSaveable { mutableStateOf(false) }
                 var showConflicts by rememberSaveable { mutableStateOf(false) }
                 var showGuide by rememberSaveable { mutableStateOf(false) }
+                var showAdvanced by rememberSaveable { mutableStateOf(false) }
 
                 when {
                     showSetup -> AuthSetupScreen(
@@ -70,6 +72,11 @@ class MainActivity : ComponentActivity() {
 
                     showGuide -> GuideScreen(onBack = { showGuide = false })
 
+                    showAdvanced -> AdvancedSettingsScreen(
+                        viewModel = settingsViewModel,
+                        onBack = { showAdvanced = false },
+                    )
+
                     else -> HomeScreen(
                         viewModel = authViewModel,
                         driveViewModel = driveViewModel,
@@ -83,6 +90,7 @@ class MainActivity : ComponentActivity() {
                         onOpenHistory = { showHistory = true },
                         onOpenConflicts = { showConflicts = true },
                         onOpenGuide = { showGuide = true },
+                        onOpenAdvanced = { showAdvanced = true },
                     )
                 }
             }

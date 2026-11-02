@@ -1,9 +1,7 @@
 package com.dalbear.onesync.sync
 
 import android.content.Context
-import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 
@@ -14,11 +12,7 @@ object OneShotSync {
 
     fun enqueue(context: Context) {
         val request = OneTimeWorkRequestBuilder<AutoSyncWorker>()
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build(),
-            )
+            .setConstraints(AutoSyncStore(context).constraints())
             .build()
 
         WorkManager.getInstance(context).enqueueUniqueWork(

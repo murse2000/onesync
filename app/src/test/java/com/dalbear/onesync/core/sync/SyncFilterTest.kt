@@ -33,6 +33,29 @@ class SyncFilterTest {
     }
 
     @Test
+    fun `excluding a directory also excludes its contents`() {
+        val filter = SyncFilter(FilterOptions(excludePatterns = listOf("node_modules", ".git")))
+        assertTrue(filter.isExcluded("node_modules", isDirectory = true))
+        assertTrue(filter.isExcluded("node_modules/lib/index.js", isDirectory = false))
+        assertTrue(filter.isExcluded(".git/config", isDirectory = false))
+        assertFalse(filter.isExcluded("src/index.js", isDirectory = false))
+    }
+
+    @Test
+    fun `max file size excludes only files`() {
+        val filter = SyncFilter(FilterOptions(maxFileSize = 100))
+        assertTrue(filter.isExcluded("big.bin", isDirectory = false, size = 101))
+        assertFalse(filter.isExcluded("big.bin", isDirectory = false, size = 100))
+        assertFalse(filter.isExcluded("folder", isDirectory = true, size = 0))
+    }
+
+    @Test
+    fun `empty rules exclude nothing`() {
+        val filter = SyncFilter()
+        assertFalse(filter.isExcluded("anything.txt", isDirectory = false, size = 10_000_000))
+    }
+
+    @Test
     fun `only top level skips nested entries`() {
         val filter = SyncFilter(FilterOptions(onlyTopLevel = true))
         assertFalse(filter.isExcluded("photo.jpg", isDirectory = false))

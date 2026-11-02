@@ -36,6 +36,10 @@ class SyncService : Service() {
     private var job: Job? = null
     private var generation = 0
 
+    // 시스템이 실행 시간 제한으로 서비스를 멈추라고 했는지.
+    @Volatile
+    private var timedOut = false
+
     override fun onCreate() {
         super.onCreate()
         createChannel()
@@ -53,6 +57,7 @@ class SyncService : Service() {
 
             ACTION_START -> {
                 val pairId = intent.getLongExtra(EXTRA_PAIR_ID, -1L)
+                timedOut = false
                 SyncCoordinator.begin()
                 startForegroundCompat("동기화 준비 중…")
                 job?.cancel()
@@ -64,6 +69,27 @@ class SyncService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /**
+     * Android 15+는 dataSync 포그라운드 서비스에 24시간당 6시간 제한을 둔다.
+     * 제한에 걸리면 시스템이 이 콜백을 부르므로, 작업을 멈추고 서비스를 내려야
+     * 앱이 강제 종료되지 않는다. 중단된 지점까지는 DB에 저장돼 있어 다음에 이어서 진행한다.
+     */
+    override fun onTimeout(startId: Int) {
+        stopBySystemTimeout()
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        stopBySystemTimeout()
+    }
+
+    private fun stopBySystemTimeout() {
+        timedOut = true
+        job?.cancel()
+        SyncCoordinator.finish("중단됨: 실행 시간 제한 · 다음에 이어서 계속합니다")
+        stopForegroundCompat()
+        stopSelf()
+    }
 
     override fun onDestroy() {
         scope.cancel()
@@ -80,7 +106,8 @@ class SyncService : Service() {
             val pairs = if (pairId > 0) {
                 listOfNotNull(container.repo.find(pairId))
             } else {
-                container.repo.list()
+                // 꺼 둔 폴더 쌍은 전체 동기화에서 뺀다. 개별 실행은 사용자의 명시적 요청이라 허용한다.
+                container.repo.listEnabled()
             }
             if (pairs.isEmpty()) {
                 result = "동기화할 폴더가 없습니다"
@@ -117,7 +144,8 @@ class SyncService : Service() {
             result = "동기화 실패: ${e.localizedMessage ?: e.javaClass.simpleName}"
         } finally {
             // 새 동기화가 시작됐으면 이 작업의 종료가 서비스를 내리면 안 된다.
-            if (runGeneration == generation) {
+            // 시스템 시간 제한으로 멈춘 경우에는 미리 남긴 안내 문구를 유지한다.
+            if (runGeneration == generation && !timedOut) {
                 SyncCoordinator.finish(result)
                 stopForegroundCompat()
                 stopSelf()
