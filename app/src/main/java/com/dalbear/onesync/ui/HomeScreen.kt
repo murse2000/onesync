@@ -168,9 +168,7 @@ fun HomeScreen(
                 SyncBar(
                     label = if (pairs.size > 1) "전체 동기화" else "동기화",
                     enabled = loggedIn && !syncState.running,
-                    running = syncState.running,
-                    message = syncState.message,
-                    result = syncState.result,
+                    state = syncState,
                     onSync = { pairViewModel.syncAll() },
                     onCancel = { pairViewModel.cancel() },
                 )
@@ -911,9 +909,7 @@ private fun StartStep(
 private fun SyncBar(
     label: String,
     enabled: Boolean,
-    running: Boolean,
-    message: String?,
-    result: String?,
+    state: SyncCoordinator.State,
     onSync: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -924,21 +920,44 @@ private fun SyncBar(
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
-            if (running) {
+            if (state.running) {
                 Text(
-                    message ?: "동기화 중…",
+                    state.message ?: "동기화 중…",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (state.total > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        buildString {
+                            if (state.pairCount > 1) {
+                                append("폴더 ${state.pairIndex}/${state.pairCount} · ")
+                            }
+                            append("${state.done}/${state.total} · 남은 ${state.remaining}개")
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp)
-                        .clip(CircleShape),
-                )
+                if (state.total > 0) {
+                    LinearProgressIndicator(
+                        progress = { state.fraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .clip(CircleShape),
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .clip(CircleShape),
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(
                     onClick = onCancel,
@@ -949,9 +968,9 @@ private fun SyncBar(
                     Text("취소")
                 }
             } else {
-                if (result != null) {
+                if (state.result != null) {
                     Text(
-                        result,
+                        state.result,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 3,

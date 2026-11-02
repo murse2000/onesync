@@ -62,14 +62,16 @@ class SyncEngine(
         pair: FolderPair,
         token: String,
         onProgress: (String) -> Unit = {},
+        onCount: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): Summary = mutex.withLock {
-        runSync(pair, token, onProgress)
+        runSync(pair, token, onProgress, onCount)
     }
 
     private suspend fun runSync(
         pair: FolderPair,
         token: String,
         onProgress: (String) -> Unit = {},
+        onCount: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): Summary {
         val localRoot = File(pair.localRoot)
         require(localRoot.isDirectory) { "로컬 폴더가 없습니다: ${pair.localRoot}" }
@@ -89,6 +91,7 @@ class SyncEngine(
             .orderedForExecution()
 
         onProgress("동기화 작업 ${actions.size}개 실행 중…")
+        onCount(0, actions.size)
 
         val localByPath = localEntries.associateBy { it.path }
         val remoteByPath = remoteEntries.associateBy { it.path }
@@ -99,7 +102,7 @@ class SyncEngine(
             .toMutableMap()
 
         var summary = Summary()
-        for (action in actions) {
+        for ((index, action) in actions.withIndex()) {
             currentCoroutineContext().ensureActive()
             summary = when (action) {
                 is SyncAction.CreateLocalDirectory -> {
@@ -262,6 +265,7 @@ class SyncEngine(
                     summary
                 }
             }
+            onCount(index + 1, actions.size)
         }
 
         event(pair.id, "sync", null, summary.toMessage())

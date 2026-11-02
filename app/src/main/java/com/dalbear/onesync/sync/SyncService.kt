@@ -58,7 +58,7 @@ class SyncService : Service() {
             ACTION_START -> {
                 val pairId = intent.getLongExtra(EXTRA_PAIR_ID, -1L)
                 timedOut = false
-                SyncCoordinator.begin()
+                SyncCoordinator.begin(pairCount = 0)
                 startForegroundCompat("동기화 준비 중…")
                 job?.cancel()
                 val currentGeneration = ++generation
@@ -116,8 +116,9 @@ class SyncService : Service() {
 
             val lines = ArrayList<String>()
             var completed = 0
-            for (pair in pairs) {
+            for ((pairPosition, pair) in pairs.withIndex()) {
                 currentCoroutineContext().ensureActive()
+                val pairIndex = pairPosition + 1
                 // 폴더 쌍마다 계정이 다를 수 있으므로 안에서 토큰을 받는다.
                 val tokenResult = sessions.tokenFor(pair.accountId)
                 if (tokenResult.isFailure) {
@@ -128,11 +129,35 @@ class SyncService : Service() {
                     continue
                 }
                 val token = tokenResult.getOrThrow()
-                val summary = container.engine.sync(pair, token) { message ->
-                    val text = "${pair.name}: $message"
-                    SyncCoordinator.progress(text)
-                    updateNotification(text)
+
+                // 알림 문구에 "끝난 수/전체"를 붙인다.
+                var lastMessage = "준비 중…"
+                var lastDone = 0
+                var lastTotal = 0
+                fun renderText(): String = buildString {
+                    append(pair.name)
+                    if (lastTotal > 0) {
+                        append(" · ${lastDone}/${lastTotal} · 남은 ${lastTotal - lastDone}개")
+                    }
+                    append(" · ")
+                    append(lastMessage)
                 }
+
+                val summary = container.engine.sync(
+                    pair = pair,
+                    token = token,
+                    onProgress = { message ->
+                        lastMessage = message
+                        SyncCoordinator.progress(message)
+                        updateNotification(renderText())
+                    },
+                    onCount = { done, total ->
+                        lastDone = done
+                        lastTotal = total
+                        SyncCoordinator.count(done, total, pairIndex, pairs.size)
+                        updateNotification(renderText())
+                    },
+                )
                 lines += "${pair.name}: ${summary.toMessage()}"
                 completed++
             }
