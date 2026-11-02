@@ -90,8 +90,12 @@ class SyncEngine(
             .plan(pair.syncMethod, previous, localEntries, remoteEntries)
             .orderedForExecution()
 
+        // 링크·상태 정리·무시는 실제 전송이 아니므로 진행률에서 뺀다.
+        // 이걸 세면 이미 동기화된 항목까지 매번 다시 세어 숫자가 튄다.
+        val workTotal = actions.count { it.countsAsWork() }
+        var workDone = 0
         onProgress("동기화 작업 ${actions.size}개 실행 중…")
-        onCount(0, actions.size)
+        onCount(0, workTotal)
 
         val localByPath = localEntries.associateBy { it.path }
         val remoteByPath = remoteEntries.associateBy { it.path }
@@ -102,7 +106,7 @@ class SyncEngine(
             .toMutableMap()
 
         var summary = Summary()
-        for ((index, action) in actions.withIndex()) {
+        for (action in actions) {
             currentCoroutineContext().ensureActive()
             summary = when (action) {
                 is SyncAction.CreateLocalDirectory -> {
@@ -265,7 +269,10 @@ class SyncEngine(
                     summary
                 }
             }
-            onCount(index + 1, actions.size)
+            if (action.countsAsWork()) {
+                workDone++
+                onCount(workDone, workTotal)
+            }
         }
 
         event(pair.id, "sync", null, summary.toMessage())
@@ -414,4 +421,13 @@ class SyncEngine(
     private companion object {
         const val MAX_SIMPLE_UPLOAD = 4L * 1024 * 1024
     }
+}
+
+/**
+ * 진행률에 세는 작업인지.
+ * 링크(양쪽 동일), 상태 정리, 무시는 전송이 아니므로 사용자에게 남은 개수로 보여주지 않는다.
+ */
+internal fun SyncAction.countsAsWork(): Boolean = when (this) {
+    is SyncAction.Link, is SyncAction.RemoveState, is SyncAction.Ignore -> false
+    else -> true
 }
