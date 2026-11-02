@@ -24,6 +24,9 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
     var quotaText by mutableStateOf<String?>(null)
         private set
 
+    var quotaFraction by mutableStateOf(0f)
+        private set
+
     var items by mutableStateOf<List<DriveItem>>(emptyList())
         private set
 
@@ -63,6 +66,11 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
                 if (quotaText == null) {
                     val drive = graph.drive(accessToken)
                     quotaText = formatQuota(drive.quotaUsed, drive.quotaTotal)
+                    quotaFraction = if (drive.quotaTotal > 0) {
+                        (drive.quotaUsed.toFloat() / drive.quotaTotal).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
                 }
                 items = graph.folders(accessToken, currentFolderId)
             } catch (e: Exception) {

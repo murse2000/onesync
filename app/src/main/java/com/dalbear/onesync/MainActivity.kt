@@ -3,9 +3,8 @@ package com.dalbear.onesync
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -16,6 +15,7 @@ import com.dalbear.onesync.ui.DriveViewModel
 import com.dalbear.onesync.ui.HomeScreen
 import com.dalbear.onesync.ui.NewPairScreen
 import com.dalbear.onesync.ui.PairViewModel
+import com.dalbear.onesync.ui.theme.OneSyncTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -25,8 +25,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            OneSyncTheme {
                 var showSetup by rememberSaveable {
                     mutableStateOf(authViewModel.clientId == null)
                 }
