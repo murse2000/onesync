@@ -29,10 +29,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.History
@@ -96,6 +98,7 @@ fun HomeScreen(
     onNewPair: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenConflicts: () -> Unit,
+    onOpenGuide: () -> Unit,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -148,6 +151,9 @@ fun HomeScreen(
             TopAppBar(
                 title = { BrandMark() },
                 actions = {
+                    IconButton(onClick = onOpenGuide) {
+                        Icon(Icons.Outlined.HelpOutline, contentDescription = "사용법")
+                    }
                     IconButton(onClick = onOpenHistory) {
                         Icon(Icons.Outlined.History, contentDescription = "동기화 기록")
                     }
@@ -180,15 +186,32 @@ fun HomeScreen(
                 bottom = padding.calculateBottomPadding() + 16.dp,
             ),
         ) {
-            item {
-                AccountCard(
-                    accounts = accounts,
-                    quotaText = driveViewModel.quotaText,
-                    quotaFraction = driveViewModel.quotaFraction,
-                    busy = viewModel.busy,
-                    onSignIn = { activity?.let { viewModel.signIn(it) } },
-                    onManage = { sheet = HomeSheet.ACCOUNTS },
-                )
+            if (loggedIn) {
+                item {
+                    AccountCard(
+                        account = accounts.first(),
+                        accountCount = accounts.size,
+                        quotaText = driveViewModel.quotaText,
+                        quotaFraction = driveViewModel.quotaFraction,
+                        onManage = { sheet = HomeSheet.ACCOUNTS },
+                    )
+                }
+            }
+
+            // 아직 설정이 끝나지 않았으면 다음에 할 일을 보여준다.
+            if (!loggedIn || pairs.isEmpty()) {
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    StartCard(
+                        loggedIn = loggedIn,
+                        hasPairs = pairs.isNotEmpty(),
+                        hasAllFilesAccess = hasAllFilesAccess,
+                        busy = viewModel.busy,
+                        onSignIn = { activity?.let { viewModel.signIn(it) } },
+                        onNewPair = onNewPair,
+                        onOpenGuide = onOpenGuide,
+                    )
+                }
             }
 
             if (!hasAllFilesAccess) {
@@ -209,9 +232,7 @@ fun HomeScreen(
                 )
             }
 
-            if (pairs.isEmpty()) {
-                item { EmptyPairs(loggedIn = loggedIn, onNewPair = onNewPair) }
-            } else {
+            if (pairs.isNotEmpty()) {
                 items(pairs, key = { it.id }) { pair ->
                     PairRow(
                         pair = pair,
@@ -309,6 +330,10 @@ fun HomeScreen(
                         onOpenSetup()
                     },
                     onManageAccounts = { sheet = HomeSheet.ACCOUNTS },
+                    onOpenGuide = {
+                        sheet = null
+                        onOpenGuide()
+                    },
                     onOpenAllFilesSettings = { openAllFilesAccessSettings(context) },
                 )
 
@@ -425,21 +450,19 @@ private fun BrandMark() {
 
 @Composable
 private fun AccountCard(
-    accounts: List<AccountInfo>,
+    account: AccountInfo,
+    accountCount: Int,
     quotaText: String?,
     quotaFraction: Float,
-    busy: Boolean,
-    onSignIn: () -> Unit,
     onManage: () -> Unit,
 ) {
-    val primary = accounts.firstOrNull()
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.large)
-            .then(if (primary != null) Modifier.clickable(onClick = onManage) else Modifier),
+            .clickable(onClick = onManage),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -451,7 +474,7 @@ private fun AccountCard(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = primary?.username?.firstOrNull()?.uppercase() ?: "?",
+                        text = account.username.firstOrNull()?.uppercase() ?: "?",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
@@ -459,17 +482,16 @@ private fun AccountCard(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = primary?.username ?: "OneDrive 연결",
+                        text = account.username,
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = when {
-                            primary == null -> "로그인하면 동기화를 시작할 수 있습니다"
-                            accounts.size > 1 -> {
+                            accountCount > 1 -> {
                                 val quota = quotaText ?: "용량 정보를 불러오는 중…"
-                                "${accounts.size}개 계정 · $quota"
+                                "${accountCount}개 계정 · $quota"
                             }
                             quotaText != null -> quotaText
                             else -> "용량 정보를 불러오는 중…"
@@ -480,21 +502,15 @@ private fun AccountCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (primary == null) {
-                    FilledTonalButton(onClick = onSignIn, enabled = !busy) {
-                        Text("로그인")
-                    }
-                } else {
-                    Icon(
-                        Icons.Outlined.ChevronRight,
-                        contentDescription = "계정 관리",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
+                Icon(
+                    Icons.Outlined.ChevronRight,
+                    contentDescription = "계정 관리",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
             }
 
-            if (primary != null && quotaText != null) {
+            if (quotaText != null) {
                 Spacer(Modifier.height(14.dp))
                 Box(
                     modifier = Modifier
@@ -739,43 +755,148 @@ private fun PairRow(
     }
 }
 
+/**
+ * 설정이 끝나기 전에 보여주는 체크리스트.
+ * 지금 해야 할 단계 하나만 버튼으로 열어 준다.
+ */
 @Composable
-private fun EmptyPairs(loggedIn: Boolean, onNewPair: () -> Unit) {
-    Column(
+private fun StartCard(
+    loggedIn: Boolean,
+    hasPairs: Boolean,
+    hasAllFilesAccess: Boolean,
+    busy: Boolean,
+    onSignIn: () -> Unit,
+    onNewPair: () -> Unit,
+    onOpenGuide: () -> Unit,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("시작하기", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (loggedIn) "폴더만 추가하면 동기화할 수 있습니다." else "세 단계면 동기화가 시작됩니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
+
+            StartStep(
+                number = 1,
+                title = "OneDrive 로그인",
+                body = "계정을 연결합니다.",
+                done = loggedIn,
+                actionLabel = if (loggedIn) null else "로그인",
+                actionEnabled = !busy,
+                onAction = onSignIn,
+            )
+            StartStep(
+                number = 2,
+                title = "동기화할 폴더 추가",
+                body = if (hasAllFilesAccess) {
+                    "기기 폴더와 OneDrive 폴더를 고릅니다."
+                } else {
+                    "먼저 모든 파일 액세스를 허용해야 합니다."
+                },
+                done = hasPairs,
+                actionLabel = if (hasPairs) null else "폴더 추가",
+                actionEnabled = loggedIn && hasAllFilesAccess,
+                onAction = onNewPair,
+            )
+            StartStep(
+                number = 3,
+                title = "동기화 실행",
+                body = if (hasPairs) {
+                    "아래 동기화 버튼을 누르면 바로 시작합니다."
+                } else {
+                    "폴더를 추가하면 아래 버튼이 켜집니다."
+                },
+                done = false,
+                actionLabel = null,
+                actionEnabled = false,
+                onAction = {},
+            )
+
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onOpenGuide, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                Text("사용법 자세히 보기")
+            }
+        }
+    }
+}
+
+@Composable
+private fun StartStep(
+    number: Int,
+    title: String,
+    body: String,
+    done: Boolean,
+    actionLabel: String?,
+    actionEnabled: Boolean,
+    onAction: () -> Unit,
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 20.dp, bottom = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .size(56.dp)
+                .size(24.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(
+                    if (done) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    },
+                ),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                Icons.Outlined.Cloud,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(28.dp),
+            if (done) {
+                Icon(
+                    Icons.Outlined.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(14.dp),
+                )
+            } else {
+                Text(
+                    number.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (done) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            )
+            Text(
+                body,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Spacer(Modifier.height(14.dp))
-        Text("동기화할 폴더가 없습니다", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "기기 폴더와 OneDrive 폴더를 연결하면 변경 사항을 양쪽에 맞춰 줍니다.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp),
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onNewPair, enabled = loggedIn) {
-            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+        if (actionLabel != null) {
             Spacer(Modifier.width(8.dp))
-            Text("폴더 추가")
+            FilledTonalButton(
+                onClick = onAction,
+                enabled = actionEnabled,
+                contentPadding = PaddingValues(horizontal = 14.dp),
+            ) {
+                Text(actionLabel, style = MaterialTheme.typography.labelMedium)
+            }
         }
     }
 }
@@ -944,6 +1065,7 @@ private fun SettingsSheet(
     onInstantUploadChange: (Boolean) -> Unit,
     onOpenSetup: () -> Unit,
     onManageAccounts: () -> Unit,
+    onOpenGuide: () -> Unit,
     onOpenAllFilesSettings: () -> Unit,
 ) {
     Column(
@@ -977,6 +1099,12 @@ private fun SettingsSheet(
             title = "앱 등록",
             value = "클라이언트 ID로 로그인",
             onClick = onOpenSetup,
+        )
+        SettingsRow(
+            icon = Icons.Outlined.HelpOutline,
+            title = "사용법",
+            value = "로그인부터 동기화까지 안내",
+            onClick = onOpenGuide,
         )
 
         Spacer(Modifier.height(8.dp))

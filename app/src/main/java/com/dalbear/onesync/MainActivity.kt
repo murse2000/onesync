@@ -14,6 +14,7 @@ import com.dalbear.onesync.ui.AuthViewModel
 import com.dalbear.onesync.ui.ConflictsScreen
 import com.dalbear.onesync.ui.ConflictsViewModel
 import com.dalbear.onesync.ui.DriveViewModel
+import com.dalbear.onesync.ui.GuideScreen
 import com.dalbear.onesync.ui.HomeScreen
 import com.dalbear.onesync.ui.HistoryScreen
 import com.dalbear.onesync.ui.HistoryViewModel
@@ -42,6 +43,7 @@ class MainActivity : ComponentActivity() {
                 var showNewPair by rememberSaveable { mutableStateOf(false) }
                 var showHistory by rememberSaveable { mutableStateOf(false) }
                 var showConflicts by rememberSaveable { mutableStateOf(false) }
+                var showGuide by rememberSaveable { mutableStateOf(false) }
 
                 when {
                     showSetup -> AuthSetupScreen(
@@ -66,6 +68,8 @@ class MainActivity : ComponentActivity() {
                         onBack = { showConflicts = false },
                     )
 
+                    showGuide -> GuideScreen(onBack = { showGuide = false })
+
                     else -> HomeScreen(
                         viewModel = authViewModel,
                         driveViewModel = driveViewModel,
@@ -78,6 +82,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onOpenHistory = { showHistory = true },
                         onOpenConflicts = { showConflicts = true },
+                        onOpenGuide = { showGuide = true },
                     )
                 }
             }
