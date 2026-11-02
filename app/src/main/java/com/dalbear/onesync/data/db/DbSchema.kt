@@ -10,8 +10,8 @@ object DbSchema {
 
     const val DB_NAME = "onesync.db"
 
-    /** v2: FolderPair.includeSubdirectories 추가. */
-    const val VERSION = 2
+    /** v2: FolderPair.includeSubdirectories 추가. v3: delta 캐시 테이블. */
+    const val VERSION = 3
 
     val globalV1: List<String> = listOf(
         """
@@ -67,5 +67,26 @@ object DbSchema {
         )
         """.trimIndent(),
         "CREATE INDEX IndexSyncEventPairTime ON SyncEvent(pairId, timestamp)",
+        """
+        CREATE TABLE RemoteEntry(
+            pairId INTEGER NOT NULL,
+            itemId TEXT NOT NULL,
+            parentId TEXT,
+            name TEXT NOT NULL,
+            isDir INTEGER NOT NULL,
+            size INTEGER NOT NULL,
+            modified INTEGER NOT NULL,
+            hash TEXT,
+            PRIMARY KEY(pairId, itemId)
+        )
+        """.trimIndent(),
+        "CREATE INDEX IndexRemoteEntryParent ON RemoteEntry(pairId, parentId)",
+        """
+        CREATE TABLE DeltaToken(
+            pairId INTEGER PRIMARY KEY,
+            link TEXT NOT NULL,
+            updatedAt INTEGER NOT NULL
+        )
+        """.trimIndent(),
     )
 }

@@ -5,6 +5,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import com.dalbear.onesync.OneSyncApp
+import com.dalbear.onesync.monitor.MonitoringController
 import com.dalbear.onesync.sync.AutoSyncScheduler
 import com.dalbear.onesync.sync.AutoSyncStore
 
@@ -18,9 +20,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     var autoSyncInterval by mutableStateOf(store.intervalMinutes)
         private set
 
+    var instantUploadEnabled by mutableStateOf(store.instantUpload)
+        private set
+
     init {
-        // 앱이 시작될 때 등록 상태를 실제 스케줄과 맞춘다.
         applySchedule()
+        // 폴더 쌍이 있을 때만 감시 서비스를 띄운다.
+        if (instantUploadEnabled && hasPairs()) {
+            MonitoringController.apply(getApplication(), enabled = true)
+        }
     }
 
     fun updateAutoSyncEnabled(value: Boolean) {
@@ -35,7 +43,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         applySchedule()
     }
 
+    fun updateInstantUpload(value: Boolean) {
+        store.instantUpload = value
+        instantUploadEnabled = value
+        if (value && !hasPairs()) return
+        MonitoringController.apply(getApplication(), enabled = value)
+    }
+
     private fun applySchedule() {
         AutoSyncScheduler.apply(getApplication(), autoSyncEnabled, autoSyncInterval)
     }
+
+    private fun hasPairs(): Boolean =
+        (getApplication<Application>() as OneSyncApp).container.repo.list().isNotEmpty()
 }

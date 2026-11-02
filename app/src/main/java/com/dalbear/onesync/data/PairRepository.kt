@@ -27,6 +27,14 @@ data class SyncEventRow(
     val message: String?,
 )
 
+data class HistoryRow(
+    val pairName: String?,
+    val type: String,
+    val timestamp: Long,
+    val path: String?,
+    val message: String?,
+)
+
 class PairRepository(context: Context) {
 
     private val helper = SyncDatabase(context.applicationContext)
@@ -178,6 +186,30 @@ class PairRepository(context: Context) {
                     timestamp = c.getLong(c.getColumnIndexOrThrow("timestamp")),
                     path = c.getString(c.getColumnIndexOrThrow("path")),
                     message = c.getString(c.getColumnIndexOrThrow("message")),
+                )
+            }
+        }
+        return result
+    }
+
+    /** 모든 폴더 쌍의 기록을 최신순으로. */
+    fun recentHistory(limit: Int = 200): List<HistoryRow> {
+        val sql = """
+            SELECT e.type, e.timestamp, e.path, e.message, p.name AS pairName
+            FROM SyncEvent e
+            LEFT JOIN FolderPair p ON p.id = e.pairId
+            ORDER BY e.timestamp DESC
+            LIMIT ?
+        """.trimIndent()
+        val result = ArrayList<HistoryRow>()
+        db.rawQuery(sql, arrayOf(limit.toString())).use { c ->
+            while (c.moveToNext()) {
+                result += HistoryRow(
+                    pairName = c.getString(4),
+                    type = c.getString(0),
+                    timestamp = c.getLong(1),
+                    path = c.getString(2),
+                    message = c.getString(3),
                 )
             }
         }

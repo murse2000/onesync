@@ -18,6 +18,12 @@ class AutoSyncStore(context: Context) {
             prefs.edit().putInt(KEY_INTERVAL, value).apply()
         }
 
+    var instantUpload: Boolean
+        get() = prefs.getBoolean(KEY_INSTANT_UPLOAD, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_INSTANT_UPLOAD, value).apply()
+        }
+
     companion object {
         const val DEFAULT_INTERVAL = 60
         /** WorkManager 주기 작업의 최소 간격. */
@@ -25,6 +31,7 @@ class AutoSyncStore(context: Context) {
         val INTERVALS = listOf(15, 30, 60, 180, 360)
         private const val KEY_ENABLED = "enabled"
         private const val KEY_INTERVAL = "interval"
+        private const val KEY_INSTANT_UPLOAD = "instant_upload"
     }
 }
 

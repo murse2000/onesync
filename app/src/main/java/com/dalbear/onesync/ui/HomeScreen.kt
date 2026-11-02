@@ -28,12 +28,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
@@ -76,6 +78,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dalbear.onesync.core.sync.SyncMethod
 import com.dalbear.onesync.data.FolderPair
+import com.dalbear.onesync.monitor.MonitoringController
 import com.dalbear.onesync.sync.AutoSyncStore
 import com.dalbear.onesync.sync.autoSyncIntervalLabel
 
@@ -88,6 +91,7 @@ fun HomeScreen(
     settingsViewModel: SettingsViewModel,
     onOpenSetup: () -> Unit,
     onNewPair: () -> Unit,
+    onOpenHistory: () -> Unit,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -112,11 +116,21 @@ fun HomeScreen(
         if (email != null) driveViewModel.refresh()
     }
 
+    // 폴더 쌍이 준비되면 즉시 업로드 감시 서비스를 유지한다.
+    LaunchedEffect(pairViewModel.pairs, settingsViewModel.instantUploadEnabled) {
+        if (settingsViewModel.instantUploadEnabled && pairViewModel.pairs.isNotEmpty()) {
+            MonitoringController.apply(context, enabled = true)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { BrandMark() },
                 actions = {
+                    IconButton(onClick = onOpenHistory) {
+                        Icon(Icons.Outlined.History, contentDescription = "동기화 기록")
+                    }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Outlined.Settings, contentDescription = "설정")
                     }
@@ -228,6 +242,8 @@ fun HomeScreen(
                 autoSyncInterval = settingsViewModel.autoSyncInterval,
                 onAutoSyncChange = settingsViewModel::updateAutoSyncEnabled,
                 onIntervalClick = { showIntervalDialog = true },
+                instantUploadEnabled = settingsViewModel.instantUploadEnabled,
+                onInstantUploadChange = settingsViewModel::updateInstantUpload,
                 onOpenSetup = {
                     showSettings = false
                     onOpenSetup()
@@ -690,6 +706,8 @@ private fun SettingsSheet(
     autoSyncInterval: Int,
     onAutoSyncChange: (Boolean) -> Unit,
     onIntervalClick: () -> Unit,
+    instantUploadEnabled: Boolean,
+    onInstantUploadChange: (Boolean) -> Unit,
     onOpenSetup: () -> Unit,
     onSignOut: () -> Unit,
     onOpenAllFilesSettings: () -> Unit,
@@ -697,6 +715,7 @@ private fun SettingsSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
             .padding(bottom = 24.dp),
     ) {
@@ -774,6 +793,42 @@ private fun SettingsSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.Bolt,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("즉시 업로드", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    if (instantUploadEnabled) {
+                        "폴더 변경을 감지해 바로 동기화합니다."
+                    } else {
+                        "꺼짐"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = instantUploadEnabled, onCheckedChange = onInstantUploadChange)
         }
 
         Spacer(Modifier.height(8.dp))

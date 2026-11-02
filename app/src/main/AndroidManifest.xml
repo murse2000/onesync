@@ -43,6 +43,23 @@
         android:theme="@style/Theme.OneSyncLab"
         tools:targetApi="35">
 
+        <receiver
+            android:name=".monitor.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".monitor.MonitoringService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Detect local file changes and sync them immediately" />
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

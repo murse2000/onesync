@@ -13,6 +13,8 @@ import com.dalbear.onesync.ui.AuthSetupScreen
 import com.dalbear.onesync.ui.AuthViewModel
 import com.dalbear.onesync.ui.DriveViewModel
 import com.dalbear.onesync.ui.HomeScreen
+import com.dalbear.onesync.ui.HistoryScreen
+import com.dalbear.onesync.ui.HistoryViewModel
 import com.dalbear.onesync.ui.NewPairScreen
 import com.dalbear.onesync.ui.PairViewModel
 import com.dalbear.onesync.ui.SettingsViewModel
@@ -24,6 +26,7 @@ class MainActivity : ComponentActivity() {
     private val driveViewModel: DriveViewModel by viewModels()
     private val pairViewModel: PairViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
+    private val historyViewModel: HistoryViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,6 +37,7 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf(authViewModel.clientId == null)
                 }
                 var showNewPair by rememberSaveable { mutableStateOf(false) }
+                var showHistory by rememberSaveable { mutableStateOf(false) }
 
                 when {
                     showSetup -> AuthSetupScreen(
@@ -47,6 +51,11 @@ class MainActivity : ComponentActivity() {
                         onDone = { showNewPair = false },
                     )
 
+                    showHistory -> HistoryScreen(
+                        viewModel = historyViewModel,
+                        onBack = { showHistory = false },
+                    )
+
                     else -> HomeScreen(
                         viewModel = authViewModel,
                         driveViewModel = driveViewModel,
@@ -57,6 +66,7 @@ class MainActivity : ComponentActivity() {
                             pairViewModel.clearPending()
                             showNewPair = true
                         },
+                        onOpenHistory = { showHistory = true },
                     )
                 }
             }

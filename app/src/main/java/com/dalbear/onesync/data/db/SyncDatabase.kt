@@ -18,5 +18,32 @@ class SyncDatabase(context: Context) :
                 "ALTER TABLE FolderPair ADD COLUMN includeSubdirectories INTEGER NOT NULL DEFAULT 1",
             )
         }
+        if (oldVersion < 3) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS RemoteEntry(
+                    pairId INTEGER NOT NULL,
+                    itemId TEXT NOT NULL,
+                    parentId TEXT,
+                    name TEXT NOT NULL,
+                    isDir INTEGER NOT NULL,
+                    size INTEGER NOT NULL,
+                    modified INTEGER NOT NULL,
+                    hash TEXT,
+                    PRIMARY KEY(pairId, itemId)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS IndexRemoteEntryParent ON RemoteEntry(pairId, parentId)")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS DeltaToken(
+                    pairId INTEGER PRIMARY KEY,
+                    link TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+        }
     }
 }

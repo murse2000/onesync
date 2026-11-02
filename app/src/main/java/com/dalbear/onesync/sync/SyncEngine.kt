@@ -6,6 +6,7 @@ import com.dalbear.onesync.core.sync.SyncAction
 import com.dalbear.onesync.core.sync.SyncPlanner
 import com.dalbear.onesync.core.sync.SyncState
 import com.dalbear.onesync.core.sync.orderedForExecution
+import com.dalbear.onesync.data.DeltaStore
 import com.dalbear.onesync.data.FolderPair
 import com.dalbear.onesync.data.PairRepository
 import com.dalbear.onesync.graph.GraphClient
@@ -25,6 +26,7 @@ import kotlinx.coroutines.sync.withLock
 class SyncEngine(
     private val graph: GraphClient,
     private val repo: PairRepository,
+    private val deltaStore: DeltaStore,
 ) {
 
     data class Summary(
@@ -67,7 +69,7 @@ class SyncEngine(
         onProgress("로컬 폴더 스캔 중…")
         val localEntries = LocalScanner.scan(localRoot, pair.includeSubdirectories)
         onProgress("OneDrive 스캔 중…")
-        val remoteEntries = scanRemote(token, pair.remoteFolderId, pair.includeSubdirectories)
+        val remoteEntries = scanRemote(token, pair)
 
         val previous = repo.loadState(pair.id)
         val actions = SyncPlanner()
@@ -245,14 +247,19 @@ class SyncEngine(
         return summary
     }
 
-    private suspend fun scanRemote(
-        token: String,
-        rootId: String,
-        includeSubdirectories: Boolean,
-    ): List<SnapshotEntry> {
-        val result = ArrayList<SnapshotEntry>()
-        walkRemote(token, rootId, "", includeSubdirectories, result)
-        return result
+    /**
+     * delta 캐시를 먼저 갱신하고 캐시에서 목록을 만든다.
+     * delta가 실패하면(권한/엔드포인트 문제 등) 기존 재귀 스캔으로 폴백한다.
+     */
+    private suspend fun scanRemote(token: String, pair: FolderPair): List<SnapshotEntry> {
+        return try {
+            deltaStore.refresh(token, pair)
+            deltaStore.entries(pair.id, pair.remoteFolderId, pair.includeSubdirectories)
+        } catch (e: Exception) {
+            val fallback = ArrayList<SnapshotEntry>()
+            walkRemote(token, pair.remoteFolderId, "", pair.includeSubdirectories, fallback)
+            fallback
+        }
     }
 
     private suspend fun walkRemote(

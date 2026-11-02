@@ -1,8 +1,10 @@
 package com.dalbear.onesync.graph
 
+import com.dalbear.onesync.core.sync.RemoteNode
 import java.io.File
 import java.io.RandomAccessFile
 import java.net.URLEncoder
+import java.time.OffsetDateTime
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,6 +81,75 @@ class GraphClient {
             )
             parseItems(json.optJSONArray("value"))
         }
+
+    data class DeltaPage(
+        val nodes: List<RemoteNode>,
+        val deletedIds: List<String>,
+        val deltaLink: String?,
+    )
+
+    /**
+     * 폴더 범위 delta. 첫 호출은 전체 목록, 이후에는 저장된 deltaLink로 변경분만 받는다.
+     * 페이지가 많으면 최대 [MAX_DELTA_PAGES]까지 따라간다.
+     */
+    suspend fun delta(token: String, folderId: String, link: String?): DeltaPage =
+        withContext(Dispatchers.IO) {
+            var url = link?.takeIf { it.isNotBlank() }
+                ?: "$BASE/me/drive/items/$folderId/delta"
+            val nodes = ArrayList<RemoteNode>()
+            val deleted = ArrayList<String>()
+            var finalLink: String? = null
+            var pages = 0
+
+            while (pages < MAX_DELTA_PAGES) {
+                val json = getAbsolute(token, url)
+                parseDelta(json, nodes, deleted)
+                json.optString("@odata.deltaLink")
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { finalLink = it }
+                val next = json.optString("@odata.nextLink").takeIf { it.isNotEmpty() }
+                pages++
+                if (next == null) break
+                url = next
+            }
+            DeltaPage(nodes, deleted, finalLink)
+        }
+
+    private fun parseDelta(
+        json: JSONObject,
+        nodes: MutableList<RemoteNode>,
+        deleted: MutableList<String>,
+    ) {
+        val array = json.optJSONArray("value") ?: return
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            val id = item.optString("id")
+            if (id.isEmpty()) continue
+            if (item.has("deleted")) {
+                deleted += id
+                continue
+            }
+            val name = item.optString("name")
+            if (name.isEmpty()) continue
+            val parentId = item.optJSONObject("parentReference")
+                ?.optString("id")
+                ?.takeIf { it.isNotEmpty() }
+            val folder = item.optJSONObject("folder")
+            val hash = item.optJSONObject("file")
+                ?.optJSONObject("hashes")
+                ?.optString("quickXorHash")
+                ?.takeIf { it.isNotEmpty() }
+            nodes += RemoteNode(
+                id = id,
+                parentId = parentId,
+                name = name,
+                isDirectory = folder != null,
+                size = item.optLong("size"),
+                modifiedMs = parseTime(item.optString("lastModifiedDateTime")),
+                hash = hash,
+            )
+        }
+    }
 
     suspend fun createFolder(token: String, parentId: String, name: String): DriveItem =
         withContext(Dispatchers.IO) {
@@ -226,9 +297,12 @@ class GraphClient {
         return result
     }
 
-    private fun get(token: String, path: String): JSONObject {
+    private fun get(token: String, path: String): JSONObject =
+        getAbsolute(token, "$BASE$path")
+
+    private fun getAbsolute(token: String, url: String): JSONObject {
         val request = Request.Builder()
-            .url("$BASE$path")
+            .url(url)
             .header("Authorization", "Bearer $token")
             .header("Accept", "application/json")
             .get()
@@ -261,5 +335,13 @@ class GraphClient {
 
         /** OneDrive 요구사항: 320KiB의 배수. */
         const val CHUNK_SIZE = 10L * 1024 * 1024
+
+        /** 한 번의 delta 갱신에서 따라갈 최대 페이지 수. */
+        const val MAX_DELTA_PAGES = 50
+    }
+
+    private fun parseTime(value: String?): Long {
+        if (value.isNullOrBlank()) return 0
+        return runCatching { OffsetDateTime.parse(value).toInstant().toEpochMilli() }.getOrDefault(0)
     }
 }
