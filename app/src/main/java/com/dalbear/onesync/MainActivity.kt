@@ -15,6 +15,7 @@ import com.dalbear.onesync.ui.DriveViewModel
 import com.dalbear.onesync.ui.HomeScreen
 import com.dalbear.onesync.ui.NewPairScreen
 import com.dalbear.onesync.ui.PairViewModel
+import com.dalbear.onesync.ui.SettingsViewModel
 import com.dalbear.onesync.ui.theme.OneSyncTheme
 
 class MainActivity : ComponentActivity() {
@@ -22,6 +23,7 @@ class MainActivity : ComponentActivity() {
     private val authViewModel: AuthViewModel by viewModels()
     private val driveViewModel: DriveViewModel by viewModels()
     private val pairViewModel: PairViewModel by viewModels()
+    private val settingsViewModel: SettingsViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +51,7 @@ class MainActivity : ComponentActivity() {
                         viewModel = authViewModel,
                         driveViewModel = driveViewModel,
                         pairViewModel = pairViewModel,
+                        settingsViewModel = settingsViewModel,
                         onOpenSetup = { showSetup = true },
                         onNewPair = {
                             pairViewModel.clearPending()

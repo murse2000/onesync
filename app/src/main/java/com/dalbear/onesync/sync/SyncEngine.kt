@@ -12,6 +12,8 @@ import com.dalbear.onesync.graph.GraphClient
 import com.dalbear.onesync.graph.DriveItem
 import java.io.File
 import java.time.OffsetDateTime
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * 한 폴더 쌍을 실제로 동기화한다.
@@ -43,7 +45,18 @@ class SyncEngine(
         }
     }
 
+    /** 수동 동기화와 백그라운드 작업이 동시에 같은 쌍을 건드리지 않도록 직렬화한다. */
+    private val mutex = Mutex()
+
     suspend fun sync(
+        pair: FolderPair,
+        token: String,
+        onProgress: (String) -> Unit = {},
+    ): Summary = mutex.withLock {
+        runSync(pair, token, onProgress)
+    }
+
+    private suspend fun runSync(
         pair: FolderPair,
         token: String,
         onProgress: (String) -> Unit = {},

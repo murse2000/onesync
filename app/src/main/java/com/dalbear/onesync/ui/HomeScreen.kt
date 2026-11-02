@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Sync
@@ -53,6 +54,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -74,6 +76,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dalbear.onesync.core.sync.SyncMethod
 import com.dalbear.onesync.data.FolderPair
+import com.dalbear.onesync.sync.AutoSyncStore
+import com.dalbear.onesync.sync.autoSyncIntervalLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,6 +85,7 @@ fun HomeScreen(
     viewModel: AuthViewModel,
     driveViewModel: DriveViewModel,
     pairViewModel: PairViewModel,
+    settingsViewModel: SettingsViewModel,
     onOpenSetup: () -> Unit,
     onNewPair: () -> Unit,
 ) {
@@ -90,6 +95,7 @@ fun HomeScreen(
     val progress by pairViewModel.progress.collectAsStateWithLifecycle()
     var editingPair by remember { mutableStateOf<FolderPair?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showIntervalDialog by remember { mutableStateOf(false) }
     val settingsSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val pairs = pairViewModel.pairs
     val email = viewModel.accountEmail
@@ -218,6 +224,10 @@ fun HomeScreen(
             SettingsSheet(
                 email = email,
                 hasAllFilesAccess = hasAllFilesAccess,
+                autoSyncEnabled = settingsViewModel.autoSyncEnabled,
+                autoSyncInterval = settingsViewModel.autoSyncInterval,
+                onAutoSyncChange = settingsViewModel::updateAutoSyncEnabled,
+                onIntervalClick = { showIntervalDialog = true },
                 onOpenSetup = {
                     showSettings = false
                     onOpenSetup()
@@ -229,6 +239,49 @@ fun HomeScreen(
                 onOpenAllFilesSettings = { openAllFilesAccessSettings(context) },
             )
         }
+    }
+
+    if (showIntervalDialog) {
+        AlertDialog(
+            onDismissRequest = { showIntervalDialog = false },
+            title = { Text("동기화 주기") },
+            text = {
+                Column {
+                    AutoSyncStore.INTERVALS.forEach { minutes ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(MaterialTheme.shapes.small)
+                                .clickable {
+                                    settingsViewModel.updateInterval(minutes)
+                                    showIntervalDialog = false
+                                }
+                                .padding(vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = settingsViewModel.autoSyncInterval == minutes,
+                                onClick = null,
+                            )
+                            Text(
+                                autoSyncIntervalLabel(minutes),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(start = 6.dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Android가 백그라운드 실행을 지연할 수 있어 실제 간격은 조금 더 길 수 있습니다.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showIntervalDialog = false }) { Text("닫기") }
+            },
+        )
     }
 }
 
@@ -633,6 +686,10 @@ private fun PairSettingsDialog(
 private fun SettingsSheet(
     email: String?,
     hasAllFilesAccess: Boolean,
+    autoSyncEnabled: Boolean,
+    autoSyncInterval: Int,
+    onAutoSyncChange: (Boolean) -> Unit,
+    onIntervalClick: () -> Unit,
     onOpenSetup: () -> Unit,
     onSignOut: () -> Unit,
     onOpenAllFilesSettings: () -> Unit,
@@ -663,6 +720,61 @@ private fun SettingsSheet(
             value = "클라이언트 ID로 로그인",
             onClick = onOpenSetup,
         )
+
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Spacer(Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.Sync,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("자동 동기화", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    if (autoSyncEnabled) {
+                        "켜짐 · ${autoSyncIntervalLabel(autoSyncInterval)}"
+                    } else {
+                        "꺼짐"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = autoSyncEnabled, onCheckedChange = onAutoSyncChange)
+        }
+
+        if (autoSyncEnabled) {
+            SettingsRow(
+                icon = Icons.Outlined.Schedule,
+                title = "동기화 주기",
+                value = autoSyncIntervalLabel(autoSyncInterval),
+                onClick = onIntervalClick,
+            )
+            Text(
+                "Android가 백그라운드 실행을 지연할 수 있어 실제 간격은 조금 더 길 수 있습니다.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
 
         Spacer(Modifier.height(8.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
