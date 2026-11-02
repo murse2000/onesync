@@ -25,8 +25,13 @@ class ExcludeStore(context: Context) {
             prefs.edit().putInt(KEY_MAX_SIZE_MB, value.coerceAtLeast(0)).apply()
         }
 
+    /**
+     * 숨김 항목(`.git`, `.obsidian` 등)은 로컬 스캔이 원래 건너뛴다.
+     * 원격 스캔에서 빼지 않으면 매 동기화마다 "원격에만 있는 파일"로 보여 영원히 다시 받는다.
+     */
     fun filter(): SyncFilter = SyncFilter(
         FilterOptions(
+            excludeHidden = true,
             excludePatterns = parsePatterns(patterns),
             maxFileSize = maxFileSizeMb.toLong() * 1024L * 1024L,
         ),

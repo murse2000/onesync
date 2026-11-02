@@ -33,6 +33,16 @@ class SyncFilterTest {
     }
 
     @Test
+    fun `hidden folders are excluded including their contents`() {
+        // 로컬 스캐너가 숨김 항목을 건너뛰므로 원격도 같이 빼야 매번 다시 받지 않는다.
+        val filter = SyncFilter(FilterOptions(excludeHidden = true))
+        assertTrue(filter.isExcluded(".git", isDirectory = true))
+        assertTrue(filter.isExcluded(".git/objects/ab/cdef", isDirectory = false))
+        assertTrue(filter.isExcluded("notes/.obsidian/app.json", isDirectory = false))
+        assertFalse(filter.isExcluded("notes/daily.md", isDirectory = false))
+    }
+
+    @Test
     fun `excluding a directory also excludes its contents`() {
         val filter = SyncFilter(FilterOptions(excludePatterns = listOf("node_modules", ".git")))
         assertTrue(filter.isExcluded("node_modules", isDirectory = true))
