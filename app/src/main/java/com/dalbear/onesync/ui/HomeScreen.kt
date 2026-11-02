@@ -102,12 +102,11 @@ fun HomeScreen(
     var hasAllFilesAccess by remember { mutableStateOf(isAllFilesAccessGranted()) }
     val syncState by SyncCoordinator.state.collectAsStateWithLifecycle()
     var editingPair by remember { mutableStateOf<FolderPair?>(null) }
-    var showSettings by remember { mutableStateOf(false) }
+    // 설정과 계정은 시트 하나를 돌려 쓴다. 시트를 갈아끼우면 터치가 새 시트 바깥으로 떨어진다.
+    var sheet by remember { mutableStateOf<HomeSheet?>(null) }
     var showIntervalDialog by remember { mutableStateOf(false) }
-    var showAccounts by remember { mutableStateOf(false) }
     var logoutTarget by remember { mutableStateOf<AccountInfo?>(null) }
-    val settingsSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val accountsSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val homeSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val pairs = pairViewModel.pairs
     val accounts = viewModel.accounts
     val email = accounts.firstOrNull()?.username
@@ -152,7 +151,7 @@ fun HomeScreen(
                     IconButton(onClick = onOpenHistory) {
                         Icon(Icons.Outlined.History, contentDescription = "동기화 기록")
                     }
-                    IconButton(onClick = { showSettings = true }) {
+                    IconButton(onClick = { sheet = HomeSheet.SETTINGS }) {
                         Icon(Icons.Outlined.Settings, contentDescription = "설정")
                     }
                 },
@@ -188,7 +187,7 @@ fun HomeScreen(
                     quotaFraction = driveViewModel.quotaFraction,
                     busy = viewModel.busy,
                     onSignIn = { activity?.let { viewModel.signIn(it) } },
-                    onManage = { showAccounts = true },
+                    onManage = { sheet = HomeSheet.ACCOUNTS },
                 )
             }
 
@@ -289,46 +288,40 @@ fun HomeScreen(
         )
     }
 
-    if (showSettings) {
+    if (sheet != null) {
         ModalBottomSheet(
-            onDismissRequest = { showSettings = false },
-            sheetState = settingsSheet,
+            onDismissRequest = { sheet = null },
+            sheetState = homeSheet,
         ) {
-            SettingsSheet(
-                email = email,
-                accountCount = accounts.size,
-                hasAllFilesAccess = hasAllFilesAccess,
-                autoSyncEnabled = settingsViewModel.autoSyncEnabled,
-                autoSyncInterval = settingsViewModel.autoSyncInterval,
-                onAutoSyncChange = settingsViewModel::updateAutoSyncEnabled,
-                onIntervalClick = { showIntervalDialog = true },
-                instantUploadEnabled = settingsViewModel.instantUploadEnabled,
-                onInstantUploadChange = settingsViewModel::updateInstantUpload,
-                onOpenSetup = {
-                    showSettings = false
-                    onOpenSetup()
-                },
-                onManageAccounts = {
-                    showSettings = false
-                    showAccounts = true
-                },
-                onOpenAllFilesSettings = { openAllFilesAccessSettings(context) },
-            )
-        }
-    }
+            when (sheet) {
+                HomeSheet.SETTINGS -> SettingsSheet(
+                    email = email,
+                    accountCount = accounts.size,
+                    hasAllFilesAccess = hasAllFilesAccess,
+                    autoSyncEnabled = settingsViewModel.autoSyncEnabled,
+                    autoSyncInterval = settingsViewModel.autoSyncInterval,
+                    onAutoSyncChange = settingsViewModel::updateAutoSyncEnabled,
+                    onIntervalClick = { showIntervalDialog = true },
+                    instantUploadEnabled = settingsViewModel.instantUploadEnabled,
+                    onInstantUploadChange = settingsViewModel::updateInstantUpload,
+                    onOpenSetup = {
+                        sheet = null
+                        onOpenSetup()
+                    },
+                    onManageAccounts = { sheet = HomeSheet.ACCOUNTS },
+                    onOpenAllFilesSettings = { openAllFilesAccessSettings(context) },
+                )
 
-    if (showAccounts) {
-        ModalBottomSheet(
-            onDismissRequest = { showAccounts = false },
-            sheetState = accountsSheet,
-        ) {
-            AccountsSheet(
-                accounts = accounts,
-                pairCounts = pairCounts,
-                busy = viewModel.busy,
-                onAdd = { activity?.let { viewModel.signIn(it, selectAccount = true) } },
-                onSignOut = { logoutTarget = it },
-            )
+                HomeSheet.ACCOUNTS -> AccountsSheet(
+                    accounts = accounts,
+                    pairCounts = pairCounts,
+                    busy = viewModel.busy,
+                    onAdd = { activity?.let { viewModel.signIn(it, selectAccount = true) } },
+                    onSignOut = { logoutTarget = it },
+                )
+
+                null -> Unit
+            }
         }
     }
 
@@ -351,7 +344,7 @@ fun HomeScreen(
                 TextButton(
                     onClick = {
                         logoutTarget = null
-                        showAccounts = false
+                        sheet = null
                         viewModel.signOut(target.id)
                     },
                 ) {
@@ -1137,6 +1130,9 @@ private fun SettingsRow(
         }
     }
 }
+
+/** 홈에서 여는 바텀시트. 하나의 시트를 돌려 쓴다. */
+private enum class HomeSheet { SETTINGS, ACCOUNTS }
 
 private fun shortPath(path: String, keep: Int = 2): String {
     val parts = path.split('/').filter { it.isNotEmpty() }
