@@ -17,6 +17,8 @@ data class FolderPair(
     val remoteFolderPath: String,
     val syncMethod: SyncMethod,
     val includeSubdirectories: Boolean,
+    /** 이 폴더 쌍이 동기화할 MSAL 계정 ID. null이면 첫 계정(예전 폴더 쌍). */
+    val accountId: String? = null,
 )
 
 data class SyncEventRow(
@@ -62,6 +64,7 @@ class PairRepository(context: Context) {
         remoteFolderPath: String,
         method: SyncMethod,
         includeSubdirectories: Boolean,
+        accountId: String?,
     ): Long {
         val values = ContentValues().apply {
             put("name", name)
@@ -72,6 +75,7 @@ class PairRepository(context: Context) {
             put("isEnabled", 1)
             put("includeSubdirectories", if (includeSubdirectories) 1 else 0)
             put("createdAt", System.currentTimeMillis())
+            put("accountId", accountId)
         }
         return db.insert("FolderPair", null, values)
     }
@@ -203,7 +207,8 @@ class PairRepository(context: Context) {
     }
 
     /** 모든 폴더 쌍의 기록을 최신순으로. */
-    fun recentHistory(limit: Int = 200): List<HistoryRow> {        val sql = """
+    fun recentHistory(limit: Int = 200): List<HistoryRow> {
+        val sql = """
             SELECT e.type, e.timestamp, e.path, e.message, p.name AS pairName
             FROM SyncEvent e
             LEFT JOIN FolderPair p ON p.id = e.pairId
@@ -279,7 +284,9 @@ class PairRepository(context: Context) {
             arrayOf(id.toString()),
         )
     }
-    private fun Cursor.toPair(): FolderPair {        val method = getString(getColumnIndexOrThrow("syncMethod"))
+    private fun Cursor.toPair(): FolderPair {
+        val method = getString(getColumnIndexOrThrow("syncMethod"))
+        val accountIndex = getColumnIndexOrThrow("accountId")
         return FolderPair(
             id = getLong(getColumnIndexOrThrow("id")),
             name = getString(getColumnIndexOrThrow("name")),
@@ -288,6 +295,7 @@ class PairRepository(context: Context) {
             remoteFolderPath = getString(getColumnIndexOrThrow("remoteFolderPath")),
             syncMethod = runCatching { SyncMethod.valueOf(method) }.getOrDefault(SyncMethod.TWO_WAY),
             includeSubdirectories = getInt(getColumnIndexOrThrow("includeSubdirectories")) != 0,
+            accountId = if (isNull(accountIndex)) null else getString(accountIndex),
         )
     }
 }

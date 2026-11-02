@@ -30,8 +30,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Cloud
-import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
@@ -77,6 +77,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dalbear.onesync.auth.AccountInfo
 import com.dalbear.onesync.core.sync.SyncMethod
 import com.dalbear.onesync.data.FolderPair
 import com.dalbear.onesync.monitor.MonitoringController
@@ -103,24 +104,37 @@ fun HomeScreen(
     var editingPair by remember { mutableStateOf<FolderPair?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showIntervalDialog by remember { mutableStateOf(false) }
+    var showAccounts by remember { mutableStateOf(false) }
+    var logoutTarget by remember { mutableStateOf<AccountInfo?>(null) }
     val settingsSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val accountsSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val pairs = pairViewModel.pairs
-    val email = viewModel.accountEmail
-    val loggedIn = email != null
+    val accounts = viewModel.accounts
+    val email = accounts.firstOrNull()?.username
+    val loggedIn = accounts.isNotEmpty()
+    val pairCounts = remember(pairs, accounts) {
+        val counts = HashMap<String, Int>()
+        pairs.forEach { pair ->
+            val key = pair.accountId ?: accounts.firstOrNull()?.id ?: return@forEach
+            counts[key] = (counts[key] ?: 0) + 1
+        }
+        counts
+    }
 
     LifecycleResumeEffect(Unit) {
         hasAllFilesAccess = isAllFilesAccessGranted()
         viewModel.refresh()
         pairViewModel.loadPairs()
         // 이전 시도에서 용량 조회가 실패했으면 화면 복귀 시 다시 시도한다.
-        if (viewModel.accountEmail != null && driveViewModel.quotaText == null) {
-            driveViewModel.refresh()
+        if (viewModel.accounts.isNotEmpty() && driveViewModel.quotaText == null) {
+            driveViewModel.refreshQuota()
         }
         onPauseOrDispose { }
     }
 
-    LaunchedEffect(email) {
-        if (email != null) driveViewModel.refresh()
+    // 대표 계정이 바뀌면(첫 로그인·로그아웃) 그 계정의 용량을 다시 읽는다.
+    LaunchedEffect(accounts.firstOrNull()?.id) {
+        if (accounts.isNotEmpty()) driveViewModel.refreshQuota()
     }
 
     // 폴더 쌍이 준비되면 즉시 업로드 감시 서비스를 유지한다.
@@ -169,11 +183,12 @@ fun HomeScreen(
         ) {
             item {
                 AccountCard(
-                    email = email,
+                    accounts = accounts,
                     quotaText = driveViewModel.quotaText,
                     quotaFraction = driveViewModel.quotaFraction,
                     busy = viewModel.busy,
-                    onSignIn = { activity?.let(viewModel::signIn) },
+                    onSignIn = { activity?.let { viewModel.signIn(it) } },
+                    onManage = { showAccounts = true },
                 )
             }
 
@@ -201,6 +216,9 @@ fun HomeScreen(
                 items(pairs, key = { it.id }) { pair ->
                     PairRow(
                         pair = pair,
+                        accountLabel = pair.accountId?.let { pairViewModel.accountLabels[it] }
+                            ?: pairViewModel.accountLabels[accounts.firstOrNull()?.id],
+                        showAccount = accounts.size > 1,
                         busy = syncState.running,
                         onSync = { pairViewModel.sync(pair) },
                         onClick = { editingPair = pair },
@@ -257,6 +275,8 @@ fun HomeScreen(
     if (selected != null) {
         PairSettingsDialog(
             pair = selected,
+            accountLabel = selected.accountId?.let { pairViewModel.accountLabels[it] }
+                ?: pairViewModel.accountLabels[accounts.firstOrNull()?.id],
             onDismiss = { editingPair = null },
             onSave = { method, subdirectories ->
                 pairViewModel.updateOptions(selected, method, subdirectories)
@@ -276,6 +296,7 @@ fun HomeScreen(
         ) {
             SettingsSheet(
                 email = email,
+                accountCount = accounts.size,
                 hasAllFilesAccess = hasAllFilesAccess,
                 autoSyncEnabled = settingsViewModel.autoSyncEnabled,
                 autoSyncInterval = settingsViewModel.autoSyncInterval,
@@ -287,13 +308,60 @@ fun HomeScreen(
                     showSettings = false
                     onOpenSetup()
                 },
-                onSignOut = {
+                onManageAccounts = {
                     showSettings = false
-                    viewModel.signOut()
+                    showAccounts = true
                 },
                 onOpenAllFilesSettings = { openAllFilesAccessSettings(context) },
             )
         }
+    }
+
+    if (showAccounts) {
+        ModalBottomSheet(
+            onDismissRequest = { showAccounts = false },
+            sheetState = accountsSheet,
+        ) {
+            AccountsSheet(
+                accounts = accounts,
+                pairCounts = pairCounts,
+                busy = viewModel.busy,
+                onAdd = { activity?.let { viewModel.signIn(it, selectAccount = true) } },
+                onSignOut = { logoutTarget = it },
+            )
+        }
+    }
+
+    logoutTarget?.let { target ->
+        val count = pairCounts[target.id] ?: 0
+        AlertDialog(
+            onDismissRequest = { logoutTarget = null },
+            title = { Text("로그아웃") },
+            text = {
+                Text(
+                    if (count > 0) {
+                        "${target.username} 계정에 연결된 폴더 ${count}개는 동기화되지 않습니다. " +
+                            "폴더 쌍은 지워지지 않습니다."
+                    } else {
+                        "${target.username} 계정을 앱에서 제거합니다."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        logoutTarget = null
+                        showAccounts = false
+                        viewModel.signOut(target.id)
+                    },
+                ) {
+                    Text("로그아웃", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { logoutTarget = null }) { Text("취소") }
+            },
+        )
     }
 
     if (showIntervalDialog) {
@@ -364,16 +432,21 @@ private fun BrandMark() {
 
 @Composable
 private fun AccountCard(
-    email: String?,
+    accounts: List<AccountInfo>,
     quotaText: String?,
     quotaFraction: Float,
     busy: Boolean,
     onSignIn: () -> Unit,
+    onManage: () -> Unit,
 ) {
+    val primary = accounts.firstOrNull()
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .then(if (primary != null) Modifier.clickable(onClick = onManage) else Modifier),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -385,7 +458,7 @@ private fun AccountCard(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = email?.firstOrNull()?.uppercase() ?: "?",
+                        text = primary?.username?.firstOrNull()?.uppercase() ?: "?",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
@@ -393,14 +466,18 @@ private fun AccountCard(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = email ?: "OneDrive 연결",
+                        text = primary?.username ?: "OneDrive 연결",
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = when {
-                            email == null -> "로그인하면 동기화를 시작할 수 있습니다"
+                            primary == null -> "로그인하면 동기화를 시작할 수 있습니다"
+                            accounts.size > 1 -> {
+                                val quota = quotaText ?: "용량 정보를 불러오는 중…"
+                                "${accounts.size}개 계정 · $quota"
+                            }
                             quotaText != null -> quotaText
                             else -> "용량 정보를 불러오는 중…"
                         },
@@ -410,14 +487,21 @@ private fun AccountCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (email == null) {
+                if (primary == null) {
                     FilledTonalButton(onClick = onSignIn, enabled = !busy) {
                         Text("로그인")
                     }
+                } else {
+                    Icon(
+                        Icons.Outlined.ChevronRight,
+                        contentDescription = "계정 관리",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
             }
 
-            if (email != null && quotaText != null) {
+            if (primary != null && quotaText != null) {
                 Spacer(Modifier.height(14.dp))
                 Box(
                     modifier = Modifier
@@ -440,6 +524,95 @@ private fun AccountCard(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AccountsSheet(
+    accounts: List<AccountInfo>,
+    pairCounts: Map<String, Int>,
+    busy: Boolean,
+    onAdd: () -> Unit,
+    onSignOut: (AccountInfo) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 24.dp),
+    ) {
+        Text("OneDrive 계정", style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "폴더 쌍마다 사용할 계정을 따로 고를 수 있습니다.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(14.dp))
+
+        if (accounts.isEmpty()) {
+            Text(
+                "로그인된 계정이 없습니다.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(14.dp))
+        }
+
+        accounts.forEach { account ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        account.username.firstOrNull()?.uppercase() ?: "?",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        account.username,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    val count = pairCounts[account.id] ?: 0
+                    Text(
+                        if (count > 0) "폴더 ${count}개 연결됨" else "연결된 폴더 없음",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = { onSignOut(account) }, enabled = !busy) {
+                    Text("로그아웃", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = onAdd,
+            enabled = !busy,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+        ) {
+            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("계정 추가")
         }
     }
 }
@@ -504,6 +677,8 @@ private fun SectionHeader(
 @Composable
 private fun PairRow(
     pair: FolderPair,
+    accountLabel: String?,
+    showAccount: Boolean,
     busy: Boolean,
     onSync: () -> Unit,
     onClick: () -> Unit,
@@ -547,10 +722,17 @@ private fun PairRow(
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                "${syncMethodLabel(pair.syncMethod)} · " +
-                    if (pair.includeSubdirectories) "하위 폴더" else "최상위만",
+                buildString {
+                    // 계정이 하나면 굳이 반복하지 않는다.
+                    if (showAccount && accountLabel != null) append("$accountLabel · ")
+                    append(syncMethodLabel(pair.syncMethod))
+                    append(" · ")
+                    append(if (pair.includeSubdirectories) "하위 폴더" else "최상위만")
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         IconButton(onClick = onSync, enabled = !busy) {
@@ -677,6 +859,7 @@ private fun SyncBar(
 @Composable
 private fun PairSettingsDialog(
     pair: FolderPair,
+    accountLabel: String?,
     onDismiss: () -> Unit,
     onSave: (SyncMethod, Boolean) -> Unit,
     onDelete: () -> Unit,
@@ -694,6 +877,13 @@ private fun PairSettingsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (accountLabel != null) {
+                    Text(
+                        "계정: $accountLabel",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
                 Text("동기화 방식", style = MaterialTheme.typography.titleSmall)
                 SyncMethod.entries.forEach { candidate ->
@@ -751,6 +941,7 @@ private fun PairSettingsDialog(
 @Composable
 private fun SettingsSheet(
     email: String?,
+    accountCount: Int,
     hasAllFilesAccess: Boolean,
     autoSyncEnabled: Boolean,
     autoSyncInterval: Int,
@@ -759,7 +950,7 @@ private fun SettingsSheet(
     instantUploadEnabled: Boolean,
     onInstantUploadChange: (Boolean) -> Unit,
     onOpenSetup: () -> Unit,
-    onSignOut: () -> Unit,
+    onManageAccounts: () -> Unit,
     onOpenAllFilesSettings: () -> Unit,
 ) {
     Column(
@@ -775,7 +966,12 @@ private fun SettingsSheet(
         SettingsRow(
             icon = Icons.Outlined.Cloud,
             title = "OneDrive 계정",
-            value = email ?: "로그인 안 됨",
+            value = when {
+                email == null -> "로그인 안 됨"
+                accountCount > 1 -> "${accountCount}개 계정 · ${email}"
+                else -> email
+            },
+            onClick = onManageAccounts,
         )
         SettingsRow(
             icon = Icons.Outlined.Storage,
@@ -885,12 +1081,6 @@ private fun SettingsSheet(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(Modifier.height(8.dp))
 
-        TextButton(onClick = onSignOut, enabled = email != null) {
-            Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("로그아웃", color = MaterialTheme.colorScheme.error)
-        }
-        Spacer(Modifier.height(4.dp))
         Text(
             "OneSync Lab 0.1.0",
             style = MaterialTheme.typography.labelSmall,

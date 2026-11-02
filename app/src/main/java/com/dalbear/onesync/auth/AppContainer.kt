@@ -15,10 +15,11 @@ import com.dalbear.onesync.sync.SyncEngine
 class AppContainer(context: Context) {
     val auth: OneDriveAuth = OneDriveAuth(context)
     val authStore: AuthStore = AuthStore(context)
+    val sessions: AccountSessions = AccountSessions(auth, authStore)
     val graph: GraphClient = GraphClient()
     val repo: PairRepository = PairRepository(context)
     val deltaStore: DeltaStore = DeltaStore(context, graph)
     val uploadStore: UploadSessionStore = UploadSessionStore(context)
     val engine: SyncEngine = SyncEngine(graph, repo, deltaStore, uploadStore)
-    val conflictResolver: ConflictResolver = ConflictResolver(repo, auth, authStore, graph)
+    val conflictResolver: ConflictResolver = ConflictResolver(repo, sessions, graph)
 }

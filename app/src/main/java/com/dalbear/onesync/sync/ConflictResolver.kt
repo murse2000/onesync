@@ -1,8 +1,8 @@
 package com.dalbear.onesync.sync
 
-import com.dalbear.onesync.auth.AuthStore
-import com.dalbear.onesync.auth.OneDriveAuth
+import com.dalbear.onesync.auth.AccountSessions
 import com.dalbear.onesync.data.ConflictRow
+import com.dalbear.onesync.data.FolderPair
 import com.dalbear.onesync.data.PairRepository
 import com.dalbear.onesync.graph.GraphClient
 import java.io.File
@@ -14,8 +14,7 @@ import java.io.File
  */
 class ConflictResolver(
     private val repo: PairRepository,
-    private val auth: OneDriveAuth,
-    private val authStore: AuthStore,
+    private val sessions: AccountSessions,
     private val graph: GraphClient,
 ) {
 
@@ -23,7 +22,7 @@ class ConflictResolver(
         val pair = repo.find(conflict.pairId) ?: return
         File(pair.localRoot, conflict.copyPath).delete()
         repo.deleteState(conflict.pairId, conflict.copyPath)
-        deleteRemoteCopy(conflict)
+        deleteRemoteCopy(pair, conflict)
         repo.resolveConflict(conflict.id)
     }
 
@@ -36,15 +35,13 @@ class ConflictResolver(
         copy.copyTo(original, overwrite = true)
         copy.delete()
         repo.deleteState(conflict.pairId, conflict.copyPath)
-        deleteRemoteCopy(conflict)
+        deleteRemoteCopy(pair, conflict)
         repo.resolveConflict(conflict.id)
     }
 
-    private suspend fun deleteRemoteCopy(conflict: ConflictRow) {
+    private suspend fun deleteRemoteCopy(pair: FolderPair, conflict: ConflictRow) {
         val remoteId = conflict.remoteCopyId ?: return
-        val clientId = authStore.clientId ?: return
-        val account = auth.accounts(clientId).firstOrNull() ?: return
-        val token = auth.accessToken(clientId, account).getOrElse { return }
+        val token = sessions.tokenFor(pair.accountId).getOrElse { return }
         runCatching { graph.deleteItem(token, remoteId) }
     }
 }

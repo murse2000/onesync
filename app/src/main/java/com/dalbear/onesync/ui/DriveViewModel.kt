@@ -7,19 +7,31 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.dalbear.onesync.OneSyncApp
+import com.dalbear.onesync.auth.AccountInfo
 import com.dalbear.onesync.graph.DriveItem
 import java.util.Locale
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
- * 로그인된 계정으로 OneDrive 쿼터와 폴더 목록을 읽는다.
+ * 계정별 OneDrive 쿼터와 폴더 목록을 읽는다.
+ * 폴더를 고르는 동안에는 [browsingAccountId] 계정의 드라이브만 본다.
  */
 class DriveViewModel(application: Application) : AndroidViewModel(application) {
 
     private val container = (application as OneSyncApp).container
-    private val auth = container.auth
-    private val store = container.authStore
+    private val sessions = container.sessions
     private val graph = container.graph
+
+    var accounts by mutableStateOf<List<AccountInfo>>(emptyList())
+        private set
+
+    /** 폴더를 고를 때 쓰는 계정 ID. null이면 첫 계정. */
+    var browsingAccountId by mutableStateOf<String?>(null)
+        private set
+
+    val browsingAccount: AccountInfo?
+        get() = accounts.firstOrNull { it.id == browsingAccountId } ?: accounts.firstOrNull()
 
     var quotaText by mutableStateOf<String?>(null)
         private set
@@ -47,32 +59,69 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     private var token: String? = null
+    private var browseJob: Job? = null
+    private var quotaJob: Job? = null
     private val stack = ArrayList<Triple<String?, String, String>>()
 
     val canGoUp: Boolean get() = stack.isNotEmpty()
 
-    fun refresh() {
-        if (busy) return
-        val clientId = store.clientId ?: return
+    /** 로그인된 계정 목록을 새로 읽는다. 폴더를 고르는 계정이 사라졌으면 첫 계정으로 되돌린다. */
+    fun loadAccounts() {
         viewModelScope.launch {
+            accounts = sessions.list()
+            if (accounts.none { it.id == browsingAccountId }) {
+                browsingAccountId = accounts.firstOrNull()?.id
+            }
+        }
+    }
+
+    /** 폴더 선택 계정을 바꾸고 그 계정의 루트부터 다시 읽는다. */
+    fun selectAccount(accountId: String?) {
+        if (accountId == browsingAccountId) return
+        browsingAccountId = accountId
+        resetBrowser()
+        refresh()
+    }
+
+    /** 홈 카드에 보여줄 첫 계정의 용량. */
+    fun refreshQuota() {
+        quotaJob?.cancel()
+        quotaJob = viewModelScope.launch {
+            quotaText = null
+            quotaFraction = 0f
+            try {
+                val account = accounts.firstOrNull() ?: sessions.list().firstOrNull() ?: return@launch
+                val accessToken = sessions.tokenFor(account.id).getOrElse {
+                    throw IllegalStateException(it.localizedMessage ?: "토큰을 가져오지 못했습니다")
+                }
+                val drive = graph.drive(accessToken)
+                quotaText = formatQuota(drive.quotaUsed, drive.quotaTotal)
+                quotaFraction = if (drive.quotaTotal > 0) {
+                    (drive.quotaUsed.toFloat() / drive.quotaTotal).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+            } catch (_: Exception) {
+                // 홈 카드는 "용량 정보를 불러오는 중…"으로 남고, 화면 복귀 시 다시 시도한다.
+            }
+        }
+    }
+
+    fun refresh() {
+        browseJob?.cancel()
+        browseJob = viewModelScope.launch {
             busy = true
             error = null
             try {
-                val account = auth.accounts(clientId).firstOrNull()
-                    ?: error("로그인이 필요합니다")
-                val accessToken = auth.accessToken(clientId, account).getOrElse {
+                if (accounts.isEmpty()) accounts = sessions.list()
+                if (accounts.none { it.id == browsingAccountId }) {
+                    browsingAccountId = accounts.firstOrNull()?.id
+                    resetBrowser()
+                }
+                val accessToken = sessions.tokenFor(browsingAccountId).getOrElse {
                     throw IllegalStateException(it.localizedMessage ?: "토큰을 가져오지 못했습니다")
                 }
                 token = accessToken
-                if (quotaText == null) {
-                    val drive = graph.drive(accessToken)
-                    quotaText = formatQuota(drive.quotaUsed, drive.quotaTotal)
-                    quotaFraction = if (drive.quotaTotal > 0) {
-                        (drive.quotaUsed.toFloat() / drive.quotaTotal).coerceIn(0f, 1f)
-                    } else {
-                        0f
-                    }
-                }
                 items = graph.folders(accessToken, currentFolderId)
             } catch (e: Exception) {
                 error = e.localizedMessage ?: "OneDrive를 읽지 못했습니다"
@@ -118,6 +167,15 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
                 busy = false
             }
         }
+    }
+
+    private fun resetBrowser() {
+        stack.clear()
+        currentFolderId = null
+        currentFolderName = "OneDrive"
+        currentFolderPath = ""
+        items = emptyList()
+        token = null
     }
 
     private fun joinPath(prefix: String, name: String): String =

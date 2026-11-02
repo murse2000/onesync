@@ -74,5 +74,9 @@ class SyncDatabase(context: Context) :
                 """.trimIndent(),
             )
         }
+        if (oldVersion < 5) {
+            // 기존 폴더 쌍은 계정을 모르므로 NULL로 두고, 동기화 시 첫 계정을 쓴다.
+            db.execSQL("ALTER TABLE FolderPair ADD COLUMN accountId TEXT")
+        }
     }
 }

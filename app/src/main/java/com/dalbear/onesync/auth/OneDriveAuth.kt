@@ -8,6 +8,7 @@ import com.microsoft.identity.client.AuthenticationCallback
 import com.microsoft.identity.client.IAuthenticationResult
 import com.microsoft.identity.client.IAccount
 import com.microsoft.identity.client.IMultipleAccountPublicClientApplication
+import com.microsoft.identity.client.Prompt
 import com.microsoft.identity.client.PublicClientApplication
 import com.microsoft.identity.client.SilentAuthenticationCallback
 import com.microsoft.identity.client.exception.MsalException
@@ -100,9 +101,13 @@ class OneDriveAuth(private val context: Context) {
     /**
      * 로그인. acquireToken은 Activity가 살아 있는 메인 스레드에서 호출해야 하므로
      * 반드시 [client]로 MSAL을 준비한 뒤 메인 스레드에서 부른다.
+     *
+     * [selectAccount]가 true면 이미 로그인된 계정을 건너뛰고 계정 선택 화면을 띄운다.
+     * 두 번째 계정을 추가할 때 쓴다.
      */
     fun signIn(
         activity: Activity,
+        selectAccount: Boolean = false,
         onResult: (Result<IAuthenticationResult>) -> Unit,
     ) {
         val app = application
@@ -110,7 +115,7 @@ class OneDriveAuth(private val context: Context) {
             onResult(Result.failure(IllegalStateException("MSAL이 아직 초기화되지 않았습니다.")))
             return
         }
-        val params = AcquireTokenParameters.Builder()
+        val builder = AcquireTokenParameters.Builder()
             .startAuthorizationFromActivity(activity)
             .withScopes(AuthConfig.SCOPES)
             .withCallback(object : AuthenticationCallback {
@@ -126,19 +131,27 @@ class OneDriveAuth(private val context: Context) {
                     onResult(Result.failure(IllegalStateException("로그인이 취소되었습니다.")))
                 }
             })
-            .build()
-        app.acquireToken(params)
+        if (selectAccount) {
+            builder.withPrompt(Prompt.SELECT_ACCOUNT)
+        }
+        app.acquireToken(builder.build())
     }
 
-    suspend fun signOut(clientId: String): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val app = client(clientId).getOrThrow()
-            val account = app.accounts.firstOrNull()
-            if (account != null) {
-                app.removeAccount(account)
+    /** [accountId] 계정만 로그아웃한다. null이면 첫 계정. */
+    suspend fun signOut(clientId: String, accountId: String? = null): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val app = client(clientId).getOrThrow()
+                val account = if (accountId == null) {
+                    app.accounts.firstOrNull()
+                } else {
+                    app.accounts.firstOrNull { it.id == accountId }
+                }
+                if (account != null) {
+                    app.removeAccount(account)
+                }
             }
         }
-    }
 
     private fun writeConfigFile(clientId: String): File {
         val file = File(context.filesDir, CONFIG_FILE_NAME)

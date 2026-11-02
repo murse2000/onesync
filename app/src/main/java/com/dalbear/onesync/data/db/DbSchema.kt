@@ -10,8 +10,11 @@ object DbSchema {
 
     const val DB_NAME = "onesync.db"
 
-    /** v2: FolderPair.includeSubdirectories 추가. v3: delta 캐시. v4: 충돌/업로드 세션. */
-    const val VERSION = 4
+    /**
+     * v2: FolderPair.includeSubdirectories 추가. v3: delta 캐시. v4: 충돌/업로드 세션.
+     * v5: FolderPair.accountId 추가(다중 계정).
+     */
+    const val VERSION = 5
 
     val globalV1: List<String> = listOf(
         """
@@ -35,7 +38,8 @@ object DbSchema {
             syncMethod TEXT NOT NULL,
             isEnabled INTEGER NOT NULL DEFAULT 1,
             includeSubdirectories INTEGER NOT NULL DEFAULT 1,
-            createdAt INTEGER NOT NULL
+            createdAt INTEGER NOT NULL,
+            accountId TEXT
         )
         """.trimIndent(),
         """

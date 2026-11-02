@@ -74,13 +74,8 @@ class SyncService : Service() {
         var result: String? = null
         try {
             val container = (application as OneSyncApp).container
-            val clientId = container.authStore.clientId
-                ?: throw IllegalStateException("클라이언트 ID가 없습니다")
-            val account = container.auth.accounts(clientId).firstOrNull()
-                ?: throw IllegalStateException("로그인이 필요합니다")
-            val token = container.auth.accessToken(clientId, account).getOrElse {
-                throw IllegalStateException(it.localizedMessage ?: "토큰을 가져오지 못했습니다")
-            }
+            val sessions = container.sessions
+            if (sessions.list().isEmpty()) throw IllegalStateException("로그인이 필요합니다")
 
             val pairs = if (pairId > 0) {
                 listOfNotNull(container.repo.find(pairId))
@@ -93,16 +88,29 @@ class SyncService : Service() {
             }
 
             val lines = ArrayList<String>()
+            var completed = 0
             for (pair in pairs) {
                 currentCoroutineContext().ensureActive()
+                // 폴더 쌍마다 계정이 다를 수 있으므로 안에서 토큰을 받는다.
+                val tokenResult = sessions.tokenFor(pair.accountId)
+                if (tokenResult.isFailure) {
+                    val message = tokenResult.exceptionOrNull()?.localizedMessage
+                        ?: "계정 로그인이 필요합니다"
+                    container.repo.addEvent(pair.id, "error", null, message)
+                    lines += "${pair.name}: $message"
+                    continue
+                }
+                val token = tokenResult.getOrThrow()
                 val summary = container.engine.sync(pair, token) { message ->
                     val text = "${pair.name}: $message"
                     SyncCoordinator.progress(text)
                     updateNotification(text)
                 }
                 lines += "${pair.name}: ${summary.toMessage()}"
+                completed++
             }
-            result = "동기화 완료\n" + lines.joinToString("\n")
+            result = (if (completed == 0) "동기화 실패\n" else "동기화 완료\n") +
+                lines.joinToString("\n")
         } catch (e: CancellationException) {
             result = "취소됨"
         } catch (e: Exception) {

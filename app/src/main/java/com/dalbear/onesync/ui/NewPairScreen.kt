@@ -19,14 +19,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +40,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dalbear.onesync.core.sync.SyncMethod
@@ -54,12 +59,39 @@ import com.dalbear.onesync.core.sync.SyncMethod
 fun NewPairScreen(
     viewModel: PairViewModel,
     driveViewModel: DriveViewModel,
+    authViewModel: AuthViewModel,
     onDone: () -> Unit,
 ) {
+    val activity = LocalContext.current as? android.app.Activity
     var mode by remember { mutableStateOf(Mode.FORM) }
     var name by remember { mutableStateOf("OneDrive 동기화") }
     var method by remember { mutableStateOf(SyncMethod.TWO_WAY) }
     var methodMenuOpen by remember { mutableStateOf(false) }
+    var accountMenuOpen by remember { mutableStateOf(false) }
+    var addingAccount by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        driveViewModel.loadAccounts()
+    }
+
+    // 계정을 추가하고 돌아오면 그 계정을 바로 고른다.
+    LaunchedEffect(authViewModel.accounts) {
+        driveViewModel.loadAccounts()
+        if (addingAccount) {
+            addingAccount = false
+            authViewModel.accounts.lastOrNull()?.let { added ->
+                if (added.id != driveViewModel.browsingAccount?.id) {
+                    viewModel.clearPendingRemote()
+                    driveViewModel.selectAccount(added.id)
+                }
+            }
+        }
+    }
+
+    // 폴더를 고르러 들어올 때마다 현재 계정의 목록을 새로 읽는다.
+    LaunchedEffect(mode) {
+        if (mode == Mode.REMOTE) driveViewModel.refresh()
+    }
 
     when (mode) {
         Mode.REMOTE -> RemoteBrowserScreen(
@@ -106,6 +138,7 @@ fun NewPairScreen(
                                         name,
                                         method,
                                         viewModel.pendingIncludeSubdirectories,
+                                        driveViewModel.browsingAccount?.id,
                                     )
                                 ) {
                                     onDone()
@@ -140,12 +173,62 @@ fun NewPairScreen(
                     modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
                 )
 
+                Box {
+                    val account = driveViewModel.browsingAccount
+                    SelectorRow(
+                        icon = Icons.Outlined.Person,
+                        label = "OneDrive 계정",
+                        value = account?.username ?: "로그인 필요",
+                        selected = account != null,
+                        onClick = { accountMenuOpen = true },
+                    )
+                    DropdownMenu(
+                        expanded = accountMenuOpen,
+                        onDismissRequest = { accountMenuOpen = false },
+                    ) {
+                        driveViewModel.accounts.forEach { candidate ->
+                            DropdownMenuItem(
+                                text = { Text(candidate.username) },
+                                leadingIcon = {
+                                    if (candidate.id == account?.id) {
+                                        Icon(Icons.Outlined.Check, contentDescription = null)
+                                    }
+                                },
+                                onClick = {
+                                    accountMenuOpen = false
+                                    if (candidate.id != account?.id) {
+                                        viewModel.clearPendingRemote()
+                                        driveViewModel.selectAccount(candidate.id)
+                                    }
+                                },
+                            )
+                        }
+                        if (driveViewModel.accounts.isNotEmpty()) {
+                            HorizontalDivider()
+                        }
+                        DropdownMenuItem(
+                            text = { Text("다른 계정으로 로그인") },
+                            onClick = {
+                                accountMenuOpen = false
+                                addingAccount = true
+                                activity?.let { authViewModel.signIn(it, selectAccount = true) }
+                            },
+                        )
+                    }
+                }
+
                 SelectorRow(
                     icon = Icons.Outlined.Cloud,
                     label = "OneDrive 폴더",
                     value = viewModel.pendingRemotePath?.let { remoteLabelFor(it) } ?: "선택",
                     selected = viewModel.pendingRemotePath != null,
-                    onClick = { mode = Mode.REMOTE },
+                    onClick = {
+                        if (driveViewModel.accounts.isEmpty()) {
+                            activity?.let { authViewModel.signIn(it) }
+                        } else {
+                            mode = Mode.REMOTE
+                        }
+                    },
                 )
                 SelectorRow(
                     icon = Icons.Outlined.Folder,

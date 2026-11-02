@@ -52,6 +52,7 @@ class MainActivity : ComponentActivity() {
                     showNewPair -> NewPairScreen(
                         viewModel = pairViewModel,
                         driveViewModel = driveViewModel,
+                        authViewModel = authViewModel,
                         onDone = { showNewPair = false },
                     )
 
