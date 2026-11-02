@@ -2,6 +2,7 @@ package com.dalbear.onesync.graph
 
 import com.dalbear.onesync.core.sync.RemoteNode
 import java.io.File
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.net.URLEncoder
 import java.time.OffsetDateTime
@@ -239,22 +240,62 @@ class GraphClient {
         throw GraphException(500, "업로드 세션이 항목을 반환하지 않았습니다")
     }
 
-    suspend fun download(token: String, itemId: String, target: File) =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url("$BASE/me/drive/items/$itemId/content")
-                .header("Authorization", "Bearer $token")
-                .build()
-            http.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw GraphException(response.code, response.body?.string().orEmpty())
-                }
-                val stream = response.body?.byteStream()
-                    ?: throw GraphException(response.code, "empty body")
-                target.parentFile?.mkdirs()
-                target.outputStream().use { output -> stream.use { it.copyTo(output) } }
+    /**
+     * 이어받기 가능한 다운로드.
+     * 임시 `.part` 파일에 받다가 크기가 맞으면 원래 이름으로 바꾼다.
+     * 실패하면 `.part`를 남겨 다음 시도에서 이어받는다.
+     */
+    suspend fun download(
+        token: String,
+        itemId: String,
+        target: File,
+        expectedSize: Long = 0,
+    ) = withContext(Dispatchers.IO) {
+        target.parentFile?.mkdirs()
+        // 로컬 스캐너가 부분 파일을 올리지 않도록 숨김 이름을 쓴다.
+        val part = File(target.parentFile, "." + target.name + ".part")
+
+        var offset = if (part.exists()) part.length() else 0L
+        if (expectedSize in 1 until offset) {
+            part.delete()
+            offset = 0
+        }
+        if (offset == expectedSize && expectedSize > 0) {
+            finalizeDownload(part, target)
+            return@withContext
+        }
+
+        val requestBuilder = Request.Builder()
+            .url("$BASE/me/drive/items/$itemId/content")
+            .header("Authorization", "Bearer $token")
+        if (offset > 0) {
+            requestBuilder.header("Range", "bytes=$offset-")
+        }
+
+        http.newCall(requestBuilder.build()).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw GraphException(response.code, response.body?.string().orEmpty())
+            }
+            val body = response.body ?: throw GraphException(response.code, "empty body")
+            // 서버가 Range를 무시하고 전체를 주면(200) 덮어써야 한다.
+            val append = offset > 0 && response.code == 206
+            java.io.FileOutputStream(part, append).use { output ->
+                body.byteStream().use { it.copyTo(output) }
             }
         }
+
+        if (expectedSize > 0 && part.length() != expectedSize) {
+            throw java.io.IOException("download incomplete: ${part.length()} / $expectedSize")
+        }
+        finalizeDownload(part, target)
+    }
+
+    private fun finalizeDownload(part: File, target: File) {
+        if (target.exists()) target.delete()
+        if (!part.renameTo(target)) {
+            throw java.io.IOException("cannot finalize download: ${target.path}")
+        }
+    }
 
     suspend fun deleteItem(token: String, itemId: String) = withContext(Dispatchers.IO) {
         val request = Request.Builder()

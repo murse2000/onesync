@@ -11,8 +11,13 @@ import com.dalbear.onesync.data.FolderPair
 import com.dalbear.onesync.data.PairRepository
 import com.dalbear.onesync.graph.GraphClient
 import com.dalbear.onesync.graph.DriveItem
+import com.dalbear.onesync.graph.GraphException
 import java.io.File
+import java.io.IOException
 import java.time.OffsetDateTime
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -88,6 +93,7 @@ class SyncEngine(
 
         var summary = Summary()
         for (action in actions) {
+            currentCoroutineContext().ensureActive()
             summary = when (action) {
                 is SyncAction.CreateLocalDirectory -> {
                     val dir = File(localRoot, action.path)
@@ -104,7 +110,7 @@ class SyncEngine(
                         summary.copy(skipped = summary.skipped + 1)
                     } else {
                         val name = action.path.substringAfterLast('/')
-                        val created = graph.createFolder(token, parentId, name)
+                        val created = withRetry { graph.createFolder(token, parentId, name) }
                         remoteDirectoryIds[action.path] = created.id
                         save(
                             pair.id,
@@ -132,7 +138,9 @@ class SyncEngine(
                         }
 
                         else -> {
-                            val uploaded = uploadFile(token, parentId, action.path, file, onProgress)
+                            val uploaded = withRetry {
+                                uploadFile(token, parentId, action.path, file, onProgress)
+                            }
                             save(pair.id, action.path, localByPath[action.path], remoteEntry(action.path, uploaded))
                             event(pair.id, "upload", action.path, null)
                             summary.copy(uploaded = summary.uploaded + 1)
@@ -148,7 +156,10 @@ class SyncEngine(
                     } else {
                         onProgress("다운로드: ${action.path}")
                         val target = File(localRoot, action.path)
-                        graph.download(token, remote.remoteId, target)
+                        target.parentFile?.mkdirs()
+                        withRetry {
+                            graph.download(token, remote.remoteId, target, remote.size)
+                        }
                         if (remote.modifiedMs > 0) target.setLastModified(remote.modifiedMs)
                         save(pair.id, action.path, entryOf(localRoot, action.path), remote)
                         event(pair.id, "download", action.path, null)
@@ -175,7 +186,7 @@ class SyncEngine(
                         repo.deleteState(pair.id, action.path)
                         summary.copy(skipped = summary.skipped + 1)
                     } else {
-                        graph.deleteItem(token, remoteId)
+                        withRetry { graph.deleteItem(token, remoteId) }
                         repo.deleteState(pair.id, action.path)
                         event(pair.id, "delete_remote", action.path, null)
                         summary.copy(deletedRemote = summary.deletedRemote + 1)
@@ -193,7 +204,9 @@ class SyncEngine(
                             summary.copy(skipped = summary.skipped + 1)
                         } else {
                             // 원격 버전을 원래 경로로 내려받아 양쪽을 모두 보존한다.
-                            graph.download(token, remote.remoteId, localFile)
+                            withRetry {
+                                graph.download(token, remote.remoteId, localFile, remote.size)
+                            }
                             save(pair.id, action.path, entryOf(localRoot, action.path), remote)
 
                             // 이름을 바꾼 로컬 사본은 새 파일로 올린다.
@@ -337,6 +350,23 @@ class SyncEngine(
     private fun parseTime(value: String?): Long {
         if (value.isNullOrBlank()) return 0
         return runCatching { OffsetDateTime.parse(value).toInstant().toEpochMilli() }.getOrDefault(0)
+    }
+
+    /** 일시적 오류(네트워크, 5xx, 429)만 지수적으로 재시도한다. */
+    private suspend fun <T> withRetry(attempts: Int = 3, block: suspend () -> T): T {
+        var last: Exception? = null
+        for (attempt in 0 until attempts) {
+            try {
+                return block()
+            } catch (e: GraphException) {
+                if (e.status in 400..499 && e.status != 429) throw e
+                last = e
+            } catch (e: IOException) {
+                last = e
+            }
+            if (attempt < attempts - 1) delay(1_000L * (attempt + 1))
+        }
+        throw last ?: IllegalStateException("retry failed")
     }
 
     private fun mimeTypeOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {

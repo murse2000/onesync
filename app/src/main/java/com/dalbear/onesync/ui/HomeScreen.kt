@@ -53,6 +53,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -80,6 +81,7 @@ import com.dalbear.onesync.core.sync.SyncMethod
 import com.dalbear.onesync.data.FolderPair
 import com.dalbear.onesync.monitor.MonitoringController
 import com.dalbear.onesync.sync.AutoSyncStore
+import com.dalbear.onesync.sync.SyncCoordinator
 import com.dalbear.onesync.sync.autoSyncIntervalLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,7 +98,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val activity = context as? Activity
     var hasAllFilesAccess by remember { mutableStateOf(isAllFilesAccessGranted()) }
-    val progress by pairViewModel.progress.collectAsStateWithLifecycle()
+    val syncState by SyncCoordinator.state.collectAsStateWithLifecycle()
     var editingPair by remember { mutableStateOf<FolderPair?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showIntervalDialog by remember { mutableStateOf(false) }
@@ -141,11 +143,12 @@ fun HomeScreen(
             if (pairs.isNotEmpty()) {
                 SyncBar(
                     label = if (pairs.size > 1) "전체 동기화" else "동기화",
-                    enabled = loggedIn && !pairViewModel.busy,
-                    busy = pairViewModel.busy,
-                    progress = progress,
-                    status = pairViewModel.status,
+                    enabled = loggedIn && !syncState.running,
+                    running = syncState.running,
+                    message = syncState.message,
+                    result = syncState.result,
                     onSync = { pairViewModel.syncAll() },
+                    onCancel = { pairViewModel.cancel() },
                 )
             }
         },
@@ -183,7 +186,7 @@ fun HomeScreen(
                     title = "폴더",
                     detail = if (pairs.isEmpty()) null else "${pairs.size}개",
                     onAdd = onNewPair,
-                    addEnabled = loggedIn && !pairViewModel.busy && hasAllFilesAccess,
+                    addEnabled = loggedIn && !syncState.running && hasAllFilesAccess,
                 )
             }
 
@@ -193,7 +196,7 @@ fun HomeScreen(
                 items(pairs, key = { it.id }) { pair ->
                     PairRow(
                         pair = pair,
-                        busy = pairViewModel.busy,
+                        busy = syncState.running,
                         onSync = { pairViewModel.sync(pair) },
                         onClick = { editingPair = pair },
                     )
@@ -570,10 +573,11 @@ private fun EmptyPairs(loggedIn: Boolean, onNewPair: () -> Unit) {
 private fun SyncBar(
     label: String,
     enabled: Boolean,
-    busy: Boolean,
-    progress: String?,
-    status: String?,
+    running: Boolean,
+    message: String?,
+    result: String?,
     onSync: () -> Unit,
+    onCancel: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.background, shadowElevation = 12.dp) {
         Column(
@@ -582,9 +586,9 @@ private fun SyncBar(
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
-            if (busy) {
+            if (running) {
                 Text(
-                    progress ?: "동기화 중…",
+                    message ?: "동기화 중…",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -598,26 +602,36 @@ private fun SyncBar(
                         .clip(CircleShape),
                 )
                 Spacer(Modifier.height(10.dp))
-            } else if (status != null) {
-                Text(
-                    status,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-            Button(
-                onClick = onSync,
-                enabled = enabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-            ) {
-                Icon(Icons.Outlined.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(label, style = MaterialTheme.typography.labelLarge)
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                ) {
+                    Text("취소")
+                }
+            } else {
+                if (result != null) {
+                    Text(
+                        result,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                Button(
+                    onClick = onSync,
+                    enabled = enabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                ) {
+                    Icon(Icons.Outlined.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(label, style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
     }
