@@ -52,6 +52,7 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
     val canGoUp: Boolean get() = stack.isNotEmpty()
 
     fun refresh() {
+        if (busy) return
         val clientId = store.clientId ?: return
         viewModelScope.launch {
             busy = true

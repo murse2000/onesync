@@ -112,6 +112,10 @@ fun HomeScreen(
         hasAllFilesAccess = isAllFilesAccessGranted()
         viewModel.refresh()
         pairViewModel.loadPairs()
+        // 이전 시도에서 용량 조회가 실패했으면 화면 복귀 시 다시 시도한다.
+        if (viewModel.accountEmail != null && driveViewModel.quotaText == null) {
+            driveViewModel.refresh()
+        }
         onPauseOrDispose { }
     }
 
@@ -395,10 +399,10 @@ private fun AccountCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = if (email != null && quotaText != null) {
-                            quotaText
-                        } else {
-                            "로그인하면 동기화를 시작할 수 있습니다"
+                        text = when {
+                            email == null -> "로그인하면 동기화를 시작할 수 있습니다"
+                            quotaText != null -> quotaText
+                            else -> "용량 정보를 불러오는 중…"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

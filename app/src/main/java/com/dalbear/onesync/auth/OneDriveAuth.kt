@@ -15,6 +15,8 @@ import java.io.File
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -31,6 +33,9 @@ class OneDriveAuth(private val context: Context) {
     @Volatile
     private var configuredClientId: String? = null
 
+    // 앱 시작 시 여러 ViewModel이 동시에 MSAL을 초기화하지 않도록 직렬화한다.
+    private val clientMutex = Mutex()
+
     /** 클라이언트 ID가 바뀌면 기존 MSAL 인스턴스를 버린다. */
     fun reset() {
         application = null
@@ -38,19 +43,21 @@ class OneDriveAuth(private val context: Context) {
     }
 
     suspend fun client(clientId: String): Result<IMultipleAccountPublicClientApplication> =
-        withContext(Dispatchers.IO) {
-            val current = application
-            val currentId = configuredClientId
-            if (current != null && currentId == clientId) {
-                return@withContext Result.success(current)
-            }
-            runCatching {
-                val config = writeConfigFile(clientId)
-                val created = PublicClientApplication
-                    .createMultipleAccountPublicClientApplication(context, config)
-                application = created
-                configuredClientId = clientId
-                created
+        clientMutex.withLock {
+            withContext(Dispatchers.IO) {
+                val current = application
+                val currentId = configuredClientId
+                if (current != null && currentId == clientId) {
+                    return@withContext Result.success(current)
+                }
+                runCatching {
+                    val config = writeConfigFile(clientId)
+                    val created = PublicClientApplication
+                        .createMultipleAccountPublicClientApplication(context, config)
+                    application = created
+                    configuredClientId = clientId
+                    created
+                }
             }
         }
 

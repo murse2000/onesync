@@ -23,7 +23,8 @@ object OneShotSync {
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             WORK_NAME,
-            ExistingWorkPolicy.REPLACE,
+            // 실행 중인 동기화를 취소하지 않고 뒤에 붙인다. 중복 업로드를 막는다.
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
             request,
         )
     }
