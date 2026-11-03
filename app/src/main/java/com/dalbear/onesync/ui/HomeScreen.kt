@@ -818,19 +818,20 @@ private fun StartCard(
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 8.dp)) {
             Text("시작하기", style = MaterialTheme.typography.titleMedium)
             Text(
                 if (loggedIn) "폴더만 추가하면 동기화할 수 있습니다." else "세 단계면 동기화가 시작됩니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
+            // 지금 해야 할 단계에만 설명을 붙인다.
             StartStep(
                 number = 1,
                 title = "OneDrive 로그인",
-                body = "계정을 연결합니다.",
+                body = null,
                 done = loggedIn,
                 actionLabel = if (loggedIn) null else "로그인",
                 actionEnabled = !busy,
@@ -839,11 +840,7 @@ private fun StartCard(
             StartStep(
                 number = 2,
                 title = "동기화할 폴더 추가",
-                body = if (hasAllFilesAccess) {
-                    "기기 폴더와 OneDrive 폴더를 고릅니다."
-                } else {
-                    "먼저 모든 파일 액세스를 허용해야 합니다."
-                },
+                body = if (hasAllFilesAccess) null else "먼저 모든 파일 액세스를 허용해야 합니다.",
                 done = hasPairs,
                 actionLabel = if (hasPairs) null else "폴더 추가",
                 actionEnabled = loggedIn && hasAllFilesAccess,
@@ -852,20 +849,15 @@ private fun StartCard(
             StartStep(
                 number = 3,
                 title = "동기화 실행",
-                body = if (hasPairs) {
-                    "아래 동기화 버튼을 누르면 바로 시작합니다."
-                } else {
-                    "폴더를 추가하면 아래 버튼이 켜집니다."
-                },
+                body = "아래 동기화 버튼으로 시작합니다.",
                 done = false,
                 actionLabel = null,
                 actionEnabled = false,
                 onAction = {},
             )
 
-            Spacer(Modifier.height(4.dp))
             TextButton(onClick = onOpenGuide, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                Text("사용법 자세히 보기")
+                Text("사용법 보기", style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -875,7 +867,7 @@ private fun StartCard(
 private fun StartStep(
     number: Int,
     title: String,
-    body: String,
+    body: String?,
     done: Boolean,
     actionLabel: String?,
     actionEnabled: Boolean,
@@ -926,11 +918,13 @@ private fun StartStep(
                     MaterialTheme.colorScheme.onSurface
                 },
             )
-            Text(
-                body,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (body != null) {
+                Text(
+                    body,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         if (actionLabel != null) {
             Spacer(Modifier.width(8.dp))

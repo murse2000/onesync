@@ -119,11 +119,17 @@ fun GuideScreen(onBack: () -> Unit) {
 
             item {
                 Spacer(Modifier.height(12.dp))
-                SectionCard("폴더 안쪽까지 동기화하려면") {
+                SectionCard("무엇을 빼고 동기화하나") {
                     Text(
-                        "폴더 추가 화면이나 폴더 설정에서 '하위 폴더와 내용까지'를 켜면 하위 폴더도 함께 맞춥니다. " +
-                            "끄면 선택한 폴더의 최상위 파일만 다룹니다.",
+                        "폴더 추가 화면이나 폴더 설정에서 '하위 폴더와 내용까지'를 켜면 하위 폴더도 맞춥니다. " +
+                            "끄면 최상위 파일만 다룹니다.",
                         style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "숨김 항목(.git, .obsidian 등)과 고급 설정의 제외 규칙에 맞는 파일은 양쪽 모두에서 건드리지 않습니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
