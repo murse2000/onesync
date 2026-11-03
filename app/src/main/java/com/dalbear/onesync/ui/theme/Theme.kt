@@ -108,9 +108,10 @@ private val AppTypography = Typography(
     bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
     bodySmall = TextStyle(fontSize = 12.5.sp, lineHeight = 18.sp),
+    // 라벨은 본문 계열보다 한 단계 작게, 자간은 건드리지 않는다.
     labelLarge = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp),
-    labelMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp, letterSpacing = 0.2.sp),
-    labelSmall = TextStyle(fontWeight = FontWeight.Medium, fontSize = 11.sp, letterSpacing = 0.2.sp),
+    labelMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp),
+    labelSmall = TextStyle(fontWeight = FontWeight.Medium, fontSize = 11.sp),
 )
 
 @Composable

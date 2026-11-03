@@ -507,11 +507,11 @@ private fun AccountCard(
             }
 
             if (quotaText != null) {
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(12.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(4.dp)
+                        .height(3.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.outlineVariant),
                 ) {
@@ -726,27 +726,50 @@ private fun PairRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                buildString {
-                    if (!pair.enabled) append("꺼짐 · ")
-                    // 계정이 하나면 굳이 반복하지 않는다.
-                    if (showAccount && accountLabel != null) append("$accountLabel · ")
-                    append(syncMethodLabel(pair.syncMethod))
-                    append(" · ")
-                    append(if (pair.includeSubdirectories) "하위 폴더" else "최상위만")
-                    append(" · ")
-                    append(if (lastSyncAt != null) relativeTime(lastSyncAt) else "아직 동기화 안 함")
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = if (pair.enabled) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.tertiary
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Spacer(Modifier.height(4.dp))
+            // 메타 정보는 가운뎃점으로 붙이지 않고 간격으로 나눈다.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!pair.enabled) {
+                    Text(
+                        "꺼짐",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                // 계정이 하나면 굳이 반복하지 않는다.
+                if (showAccount && accountLabel != null) {
+                    Text(
+                        accountLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(
+                    syncMethodLabel(pair.syncMethod),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    if (pair.includeSubdirectories) "하위 폴더" else "최상위만",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (lastSyncAt != null) relativeTime(lastSyncAt) else "아직 동기화 안 함",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
         IconButton(onClick = onSync, enabled = !busy && pair.enabled) {
             Icon(
@@ -929,17 +952,28 @@ private fun SyncBar(
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (state.total > 0) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        buildString {
-                            if (state.pairCount > 1) {
-                                append("폴더 ${state.pairIndex}/${state.pairCount} · ")
-                            }
-                            append("${state.done}/${state.total} · 남은 ${state.remaining}개")
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (state.pairCount > 1) {
+                            Text(
+                                "폴더 ${state.pairIndex}/${state.pairCount}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.width(12.dp))
+                        }
+                        Text(
+                            "${state.done}/${state.total}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "남은 ${state.remaining}개",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
                 if (state.total > 0) {
