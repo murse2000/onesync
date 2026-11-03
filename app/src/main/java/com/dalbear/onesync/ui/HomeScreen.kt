@@ -190,6 +190,8 @@ fun HomeScreen(
                         account = accounts.first(),
                         accountCount = accounts.size,
                         quotaText = driveViewModel.quotaText,
+                        quotaPercent = driveViewModel.quotaPercent,
+                        quotaShortText = driveViewModel.quotaShortText,
                         quotaFraction = driveViewModel.quotaFraction,
                         onManage = { sheet = HomeSheet.ACCOUNTS },
                     )
@@ -449,9 +451,18 @@ private fun AccountCard(
     account: AccountInfo,
     accountCount: Int,
     quotaText: String?,
+    quotaPercent: Int?,
+    quotaShortText: String?,
     quotaFraction: Float,
     onManage: () -> Unit,
 ) {
+    // 색은 의미만 담는다. 90%를 넘으면 경고색.
+    val accent = if (quotaFraction > 0.9f) {
+        MaterialTheme.colorScheme.tertiary
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -460,18 +471,18 @@ private fun AccountCard(
             .clip(MaterialTheme.shapes.large)
             .clickable(onClick = onManage),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = account.username.firstOrNull()?.uppercase() ?: "?",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
@@ -483,26 +494,38 @@ private fun AccountCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = quotaShortText ?: "용량 정보를 불러오는 중…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                        if (accountCount > 1) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "계정 ${accountCount}개",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+                if (quotaPercent != null) {
                     Text(
-                        text = when {
-                            accountCount > 1 -> {
-                                val quota = quotaText ?: "용량 정보를 불러오는 중…"
-                                "${accountCount}개 계정 · $quota"
-                            }
-                            quotaText != null -> quotaText
-                            else -> "용량 정보를 불러오는 중…"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        text = "$quotaPercent%",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = accent,
                     )
                 }
                 Icon(
                     Icons.Outlined.ChevronRight,
                     contentDescription = "계정 관리",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                        .size(18.dp),
                 )
             }
 
@@ -519,13 +542,7 @@ private fun AccountCard(
                         modifier = Modifier
                             .fillMaxWidth(quotaFraction)
                             .fillMaxHeight()
-                            .background(
-                                if (quotaFraction > 0.9f) {
-                                    MaterialTheme.colorScheme.tertiary
-                                } else {
-                                    MaterialTheme.colorScheme.primary
-                                },
-                            ),
+                            .background(accent),
                     )
                 }
             }

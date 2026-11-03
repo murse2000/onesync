@@ -36,6 +36,14 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
     var quotaText by mutableStateOf<String?>(null)
         private set
 
+    /** 카드 오른쪽에 크게 보여줄 사용 비율. */
+    var quotaPercent by mutableStateOf<Int?>(null)
+        private set
+
+    /** "95.2 / 100 GB"처럼 짧게 쓴 사용량/전체. */
+    var quotaShortText by mutableStateOf<String?>(null)
+        private set
+
     var quotaFraction by mutableStateOf(0f)
         private set
 
@@ -88,6 +96,8 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
         quotaJob?.cancel()
         quotaJob = viewModelScope.launch {
             quotaText = null
+            quotaPercent = null
+            quotaShortText = null
             quotaFraction = 0f
             try {
                 val account = accounts.firstOrNull() ?: sessions.list().firstOrNull() ?: return@launch
@@ -96,6 +106,16 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val drive = graph.drive(accessToken)
                 quotaText = formatQuota(drive.quotaUsed, drive.quotaTotal)
+                quotaPercent = if (drive.quotaTotal > 0) {
+                    (drive.quotaUsed * 100.0 / drive.quotaTotal).toInt()
+                } else {
+                    null
+                }
+                quotaShortText = if (drive.quotaTotal > 0) {
+                    "${shortSize(drive.quotaUsed)} / ${shortSize(drive.quotaTotal)}"
+                } else {
+                    null
+                }
                 quotaFraction = if (drive.quotaTotal > 0) {
                     (drive.quotaUsed.toFloat() / drive.quotaTotal).coerceIn(0f, 1f)
                 } else {
@@ -185,6 +205,15 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
         if (total <= 0) return "쿼터 정보 없음"
         val percent = (used * 100.0 / total).toInt()
         return "${formatSize(used)} / ${formatSize(total)} 사용 ($percent%)"
+    }
+
+    /** 카드 한 줄에 넣는 짧은 표기. 소수 한 자리까지만. */
+    private fun shortSize(bytes: Long): String = when {
+        bytes <= 0 -> "0 B"
+        bytes < 1024L * 1024 * 1024 -> String.format(Locale.US, "%.0f MB", bytes / (1024.0 * 1024))
+        bytes < 1024L * 1024 * 1024 * 1024 ->
+            String.format(Locale.US, "%.1f GB", bytes / (1024.0 * 1024 * 1024))
+        else -> String.format(Locale.US, "%.1f TB", bytes / (1024.0 * 1024 * 1024 * 1024))
     }
 
     private fun formatSize(bytes: Long): String = when {
